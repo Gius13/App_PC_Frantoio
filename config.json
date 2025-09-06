@@ -1,0 +1,13 @@
+{
+  "project_id": "estratto-moliture",
+  "service_account_json": "/Users/giuseppe/Documents/Frantoio/estratto-moliture-firebase-adminsdk-s49sr-4bfbea99c0.json",
+  "api_key": "AIzaSyAF64yY_r8O6Ej1Q5Jq0ENpqEE5npMX05E",
+  "database_url": " https://estratto-moliture-default-rtdb.firebaseio.com/",
+  "collection": "molitura",
+  "euro_per_kg": 0.16,
+  "poll_ms": 3000,
+  "archive_db": "frantoio_archive.db",
+  "hybrid_days": 7,
+  "retention_days": 7,
+  "mirror_interval_minutes": 5
+}
