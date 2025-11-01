@@ -8,6 +8,7 @@ from app_frantoio.core.repository import HybridRepository
 from app_frantoio.ui.main_window import MainWindow, LoginDialog
 from app_frantoio.ui.main_window import _app_icon
 
+
 def main():
     cfg = load_config()
     api_key = cfg.get("api_key", "").strip()
