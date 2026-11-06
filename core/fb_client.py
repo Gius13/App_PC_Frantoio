@@ -35,6 +35,17 @@ class FirebaseRestClient:
                     rows.append(row)  # <-- UN SOLO append
         return rows
 
+    def update_fields(self, push_id: str, changes: Dict[str, Any]):
+        """PATCH parziale, preserva gli altri campi del record Firebase."""
+        if not push_id or not changes:
+            raise ValueError("ID o modifiche mancanti.")
+        token = self._get_token() if callable(self._get_token) else None
+        params = {"auth": token} if token else {}
+        r = requests.patch(self._url(f"/{push_id}"), params=params,
+                           json=changes, timeout=15)
+        r.raise_for_status()
+        return r.json()
+
     def update_pagamento(self, push_id: str, pagamento: str):
         token = self._get_token() if callable(self._get_token) else None
         params = {"auth": token} if token else {}
