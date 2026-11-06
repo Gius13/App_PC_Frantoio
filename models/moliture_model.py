@@ -1,9 +1,9 @@
 from typing import Any, Dict, List
 from PyQt6 import QtCore
-from app_frantoio.util.time_utils import fmt_ts
+from app_frantoio.util.time_utils import fmt_date_time
 
 # 0=Nome, 1=Peso, 2=Prezzo (lordo), 3=Abbuono, 4=Ora, 5=Pagamento
-COLS = ["Nome", "Peso (kg)", "Prezzo (€)", "Abbuono (€)", "Ora", "Pagamento"]
+COLS = ["Nome", "Peso (kg)", "Prezzo (€)", "Abbuono (€)", "Data e ora", "Pagamento"]
 
 
 class MolitureModel(QtCore.QAbstractTableModel):
@@ -139,7 +139,7 @@ class MolitureModel(QtCore.QAbstractTableModel):
             if c == 1: return weight_f
             if c == 2: return prezzo
             if c == 3: return abbuono_f   # <-- importante: il float reale, non "0.00"
-            if c == 4: return fmt_ts(ts)  # non editabile, ma non fa danni
+            if c == 4: return fmt_date_time(ts)  # non editabile, ma non fa danni
             if c == 5: return pagamento
 
         # Per la visualizzazione (DisplayRole) restituiamo testo formattato
