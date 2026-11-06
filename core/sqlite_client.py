@@ -1,5 +1,6 @@
 from __future__ import annotations
 import sqlite3
+from contextlib import closing
 from datetime import date
 from typing import Any, Dict, List, Tuple
 from app_frantoio.util.time_utils import day_bounds_ts_ms
@@ -70,7 +71,7 @@ class SQLiteClient:
             raise ValueError("La data finale non può precedere quella iniziale.")
         start_ms, _ = day_bounds_ts_ms(from_date)
         _, end_ms = day_bounds_ts_ms(to_date)
-        with sqlite3.connect(self.db_path, timeout=20) as con:
+        with closing(sqlite3.connect(self.db_path, timeout=20)) as con:
             con.row_factory = sqlite3.Row
             records = con.execute("""
                 SELECT id, name, weight, pagamento, dataOra, abbuono
@@ -99,7 +100,7 @@ class SQLiteClient:
         allowed = {"name", "weight", "abbuono", "pagamento", "dataOra"}
         if not rid or not changes or set(changes) - allowed:
             raise ValueError("Modifica SQLite non valida.")
-        with sqlite3.connect(self.db_path, timeout=20) as con:
+        with closing(sqlite3.connect(self.db_path, timeout=20)) as con, con:
             con.execute("PRAGMA busy_timeout=20000")
             cur = con.execute(
                 "UPDATE moliture SET " +
