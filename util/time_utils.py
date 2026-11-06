@@ -18,6 +18,17 @@ def fmt_ts(ts_ms: Any) -> str:
             return ""
         return datetime.fromtimestamp(ts / 1000, TZ).strftime("%H:%M")
 
+def fmt_date_time(ts_ms: Any) -> str:
+        """Timestamp completo, necessario per distinguere i giorni nei risultati."""
+        if ts_ms is None or isinstance(ts_ms, dict):
+            return ""
+        try:
+            ts = int(float(ts_ms))
+            return datetime.fromtimestamp(ts / 1000, TZ).strftime("%d/%m/%Y %H:%M")
+        except (ValueError, OverflowError, TypeError, OSError):
+            return ""
+
+
 def day_bounds_ts_ms(d: date):
         start = datetime(d.year, d.month, d.day, 0, 0, tzinfo=TZ)
         end   = datetime(d.year, d.month, d.day, 23, 59, 59, 999000, tzinfo=TZ)
