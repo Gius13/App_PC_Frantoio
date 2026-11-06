@@ -1,0 +1,113 @@
+name: Compila eseguibile Windows Frantoio
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - feature/modern-ui-record-editing
+    paths:
+      - "**/*.py"
+      - "resources/**"
+      - ".github/workflows/build-windows-exe.yml"
+
+jobs:
+  build-windows:
+    name: Build Windows 64-bit (.exe)
+    runs-on: windows-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Scarica il codice
+        uses: actions/checkout@v4
+        with:
+          path: app_frantoio
+
+      - name: Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          architecture: x64
+
+      - name: Installa librerie e PyInstaller
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install PyQt6 requests pandas openpyxl tzdata pyinstaller
+
+      - name: Test di regressione su Windows
+        env:
+          QT_QPA_PLATFORM: offscreen
+        shell: pwsh
+        run: |
+          python -m unittest discover -s app_frantoio/tests -v
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Compila App_Frantoio.exe
+        shell: pwsh
+        run: |
+          python -m PyInstaller --noconfirm --clean --onefile --windowed --name App_Frantoio --paths . --icon app_frantoio/resources/app.ico --add-data "app_frantoio/resources/app.ico;app_frantoio/resources" app_frantoio/app.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if (!(Test-Path "dist/App_Frantoio.exe")) {
+            throw "L'eseguibile Windows non e' stato creato."
+          }
+          $exe = Get-Item "dist/App_Frantoio.exe"
+          Write-Host "Creato: $($exe.FullName) ($($exe.Length) byte)"
+
+      - name: Calcola impronta SHA-256
+        shell: pwsh
+        run: |
+          $hash = (Get-FileHash "dist/App_Frantoio.exe" -Algorithm SHA256).Hash
+          "$hash  App_Frantoio.exe" | Set-Content -Encoding utf8 "dist/SHA256.txt"
+          Write-Host "SHA256 $hash"
+
+      - name: Istruzioni per aggiornare su Windows
+        shell: pwsh
+        run: |
+          @'
+          APP FRANTOIO - ESEGUIBILE WINDOWS 64 BIT
+          ========================================
+
+          Contenuto: App_Frantoio.exe e SHA256.txt
+
+          Questa e' una versione PORTABILE (non un installer automatico).
+          Non serve installare Python sul PC Windows.
+
+          PRIMA DI AGGIORNARE:
+          1. Chiudi completamente il vecchio programma su tutte le postazioni.
+          2. Fai un backup del vecchio .exe e del file frantoio_archive.db
+             (o del database configurato nel campo "archive_db").
+          3. Fai un backup della configurazione utente:
+             %APPDATA%\App_Frantoio\config.json
+          4. Copia App_Frantoio.exe nella cartella del vecchio programma.
+             Non cancellare i file .db o config.json.
+          5. Se necessario, aggiorna il collegamento desktop al nuovo .exe.
+             Avvialo con la stessa cartella di lavoro ("Avvia in") usata prima,
+             poiche' un percorso SQLite relativo viene risolto rispetto
+             alla cartella di lavoro.
+          6. Effettua il login Firebase e verifica l'archivio e la modifica record.
+
+          IMPORTANTE:
+          * La build non contiene le credenziali Firebase.
+          * Il programma legge la configurazione da:
+            %APPDATA%\App_Frantoio\config.json
+          * Se manca la configurazione, vedrai "Config mancante". In questo
+            caso NON cancellare la precedente configurazione: controlla
+            api_key, database_url e collection nella copia esistente.
+          * Le modifiche all'archivio locale non sono automaticamente
+            sincronizzate su tutti i PC: provalo prima su dati di test.
+          * Eseguibile non firmato digitalmente: Windows potrebbe mostrare
+            una notifica di SmartScreen. Verifica origine e SHA256.
+          * Scarica questa build solo dal repository GitHub ufficiale.
+          '@ | Set-Content -Encoding utf8 "dist/README_Windows.txt"
+
+      - name: Carica eseguibile scaricabile
+        uses: actions/upload-artifact@v4
+        with:
+          name: App-Frantoio-Windows-x64
+          path: |
+            dist/App_Frantoio.exe
+            dist/SHA256.txt
+            dist/README_Windows.txt
+          if-no-files-found: error
+          retention-days: 30
