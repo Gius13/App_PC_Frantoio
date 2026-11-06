@@ -155,6 +155,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._sync_busy = False
         self._save_busy = False
         self._edit_open = False
+        self._suppress_model_auto_save = False
 
         # tracking selezione per evitare "rimbalzi" dopo refresh
         self._last_selected_id: Optional[str] = None
@@ -557,7 +558,10 @@ class MainWindow(QtWidgets.QMainWindow):
                          selection_at_start: Optional[str],
                          serial_at_start: int, show_cursor: bool):
         try:
-            if requested_scope != self._applied_scope or self._edit_open:
+            # Scarta un vecchio snapshot caricato mentre un pagamento
+            # veniva aggiornato: altrimenti sovrascriverebbe la cella subito.
+            if (requested_scope != self._applied_scope
+                    or self._edit_open or self._save_busy):
                 self._refresh_pending = True
                 return
 
@@ -702,23 +706,57 @@ class MainWindow(QtWidgets.QMainWindow):
             self.timer.start()
 
     # ---------------------- Azioni UI ----------------------
+    def _patch_row_without_auto_save(self, rid: str, changes: dict) -> bool:
+        """Aggiorna la tabella senza attivare il vecchio editor inline."""
+        self._suppress_model_auto_save = True
+        try:
+            return self.model.patch_record_locally(rid, changes)
+        finally:
+            self._suppress_model_auto_save = False
+
     def on_set_pagamento_clicked(self):
-        if self._busy or self._save_busy or self._sync_busy:
+        if self._save_busy:
+            self.statusBar().showMessage(
+                "Salvataggio già in corso: riprova dopo la conferma.", 5500
+            )
             return
+        if self._edit_open:
+            self.statusBar().showMessage(
+                "Concludi la modifica del record prima di cambiare il pagamento.",
+                5500,
+            )
+            return
+
         selected = self.table.selectionModel().selectedRows()
         if not selected:
-            QtWidgets.QMessageBox.information(self, "Pagamento", "Seleziona una molitura.")
+            QtWidgets.QMessageBox.information(
+                self, "Pagamento", "Seleziona una molitura."
+            )
             return
-        row = self.model.row_at(self.proxy.mapToSource(selected[0]).row())
+        source_idx = self.proxy.mapToSource(selected[0])
+        if not source_idx.isValid():
+            QtWidgets.QMessageBox.warning(
+                self, "Pagamento", "La riga selezionata non è più disponibile."
+            )
+            return
+        row = self.model.row_at(source_idx.row()).copy()
         rid = row.get("id")
         if not rid:
             QtWidgets.QMessageBox.warning(self, "Pagamento", "ID record mancante.")
             return
+
         payment = self.cmb_pagamento_quick.currentText()
+        previous_payment = row.get("pagamento") or ""
+        if payment == previous_payment:
+            self.statusBar().showMessage(
+                "Il metodo di pagamento è già impostato.", 3500
+            )
+            return
         source = row.get("_source", "firebase")
         self._save_quick_change(
             lambda: self.repo.update_pagamento(rid, payment, source),
-            f"Pagamento aggiornato: {payment or 'Da saldare'}"
+            f"Pagamento aggiornato: {payment or 'Da saldare'}",
+            optimistic=(rid, {"pagamento": payment}, {"pagamento": previous_payment}),
         )
 
     def on_delete_clicked(self):
@@ -775,6 +813,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self._pool.start(worker)
 
     def on_model_changed(self, topLeft: QtCore.QModelIndex, bottomRight: QtCore.QModelIndex, roles):
+        if self._suppress_model_auto_save:
+            return
         row = topLeft.row()
         col = topLeft.column()
         r = self.model.row_at(row)
@@ -818,24 +858,57 @@ class MainWindow(QtWidgets.QMainWindow):
             f"Pagamento aggiornato: {val or 'Da saldare'}"
         )
 
-    def _save_quick_change(self, action, success_message):
-        if self._save_busy or self._sync_busy:
+    def _save_quick_change(self, action, success_message, optimistic=None):
+        """Scrive in background e aggiorna immediatamente la riga.
+
+        Il polling e la sincronizzazione non devono far sparire il comando:
+        una richiesta gia avviata potra terminare, ma il suo snapshot viene
+        scartato in _on_refresh_done finche _save_busy e vero.
+        """
+        if self._save_busy:
+            self.statusBar().showMessage(
+                "Salvataggio già in corso: attendi la conferma.", 5500
+            )
             return
         self._save_busy = True
+        self.btn_set_pagamento.setEnabled(False)
         self.timer.stop()
+        if optimistic is not None:
+            rid, new_values, _old_values = optimistic
+            self._patch_row_without_auto_save(rid, new_values)
+            self.statusBar().showMessage(
+                "Salvataggio pagamento in corso...", 0
+            )
+
         worker = _FuncWorker(action)
 
         def done(_result):
             self._save_busy = False
-            self.statusBar().showMessage(success_message, 4000)
+            self.btn_set_pagamento.setEnabled(True)
+            self.statusBar().showMessage(success_message, 5000)
+            # La conferma remota c'e; rileggere i dati per riallineare
+            # tabella ed eventuali filtri applicati al pagamento.
+            self._refresh_pending = False
             self.refresh_data(show_cursor=False)
             self.reports_page.refresh()
             if not self.timer.isActive():
                 self.timer.start()
 
         def failed(message):
+            # In caso di errore non mostrare un pagamento mai salvato.
+            if optimistic is not None:
+                rid, _new_values, old_values = optimistic
+                self._patch_row_without_auto_save(rid, old_values)
             self._save_busy = False
-            QtWidgets.QMessageBox.warning(self, "Salvataggio non riuscito", message)
+            self.btn_set_pagamento.setEnabled(True)
+            self._refresh_pending = False
+            self.statusBar().showMessage(
+                "Pagamento non salvato: valore precedente ripristinato.", 8000
+            )
+            QtWidgets.QMessageBox.warning(
+                self, "Salvataggio non riuscito",
+                f"{message}\nIl pagamento precedente è stato ripristinato."
+            )
             self.refresh_data(show_cursor=False)
             if not self.timer.isActive():
                 self.timer.start()
