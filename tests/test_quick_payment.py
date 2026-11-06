@@ -124,7 +124,11 @@ class QuickPaymentTests(unittest.TestCase):
             self.window._sel_serial, False, original_serial,
         )
         self.assertEqual(self.payment_in_table(), "Contanti")
-        self.assertTrue(self.window._refresh_pending)
+        # _finish_refresh azzera il flag e programma subito il nuovo fetch.
+        self.assertFalse(self.window._refresh_pending)
+        self.assertTrue(self.wait_until(
+            lambda: self.payment_in_table() == "Contanti"
+        ))
 
     def test_failure_restores_previous_payment_and_notifies(self):
         self.repo.failed = True
