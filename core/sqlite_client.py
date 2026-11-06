@@ -36,6 +36,16 @@ def _ensure_archive_db(path: str) -> sqlite3.Connection:
     cur.execute("CREATE INDEX IF NOT EXISTS idx_moliture_dataOra ON moliture(dataOra)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_moliture_pagamento ON moliture(COALESCE(pagamento,''))")
 
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS local_edits (
+            id TEXT PRIMARY KEY
+        )
+    """)
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS local_deletions (
+            id TEXT PRIMARY KEY
+        )
+    """)
     con.commit()
     return con
 
@@ -71,6 +81,26 @@ class SQLiteClient:
         con.close()
         return rows
 
+    def update_fields(self, rid: str, changes: Dict[str, Any], local_override: bool = False) -> None:
+        """Aggiorna i soli campi richiesti con una transazione.
+
+        Una modifica solo locale resta protetta dal successivo mirror.
+        """
+        allowed = {"name", "weight", "abbuono", "pagamento", "dataOra"}
+        if not rid or not changes or set(changes) - allowed:
+            raise ValueError("Modifica SQLite non valida.")
+        with sqlite3.connect(self.db_path, timeout=20) as con:
+            con.execute("PRAGMA busy_timeout=20000")
+            cur = con.execute(
+                "UPDATE moliture SET " +
+                ", ".join(f"{field}=?" for field in changes) + " WHERE id=?",
+                (*changes.values(), rid),
+            )
+            if cur.rowcount == 0:
+                raise LookupError("Record non presente nell'archivio SQLite.")
+            if local_override:
+                con.execute("INSERT OR IGNORE INTO local_edits(id) VALUES (?)", (rid,))
+
     # ---------------- Aggiornamenti singolo campo ----------------
     def update_pagamento(self, rid: str, pagamento: str) -> None:
         con = sqlite3.connect(self.db_path)
@@ -99,9 +129,12 @@ class SQLiteClient:
         cur = con.cursor()
         to_ins: List[Tuple[Any, ...]] = []
 
+        protected = {r[0] for r in con.execute("SELECT id FROM local_edits")}
+        removed = {r[0] for r in con.execute("SELECT id FROM local_deletions")}
+
         for r in rows:
             rid = r.get("id")
-            if not rid:
+            if not rid or rid in protected or rid in removed:
                 continue
 
             name = r.get("name") or r.get("nome") or ""
@@ -142,6 +175,7 @@ class SQLiteClient:
         con = sqlite3.connect(self.db_path)
         cur = con.cursor()
         cur.execute("DELETE FROM moliture WHERE id=?", (rid,))
+        cur.execute("INSERT OR IGNORE INTO local_deletions(id) VALUES (?)", (rid,))
         con.commit()
         con.close()
 
