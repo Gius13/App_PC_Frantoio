@@ -58,28 +58,38 @@ class SQLiteClient:
 
     # ---------------- Lettura giorno (UI lista) ----------------
     def fetch_day(self, d: date) -> List[Dict[str, Any]]:
-        a_ms, b_ms = day_bounds_ts_ms(d)
-        con = sqlite3.connect(self.db_path)
-        cur = con.cursor()
-        cur.execute("""
-            SELECT id, name, weight, pagamento, dataOra, abbuono
-            FROM moliture
-            WHERE dataOra BETWEEN ? AND ?
-            ORDER BY dataOra ASC
-        """, (a_ms, b_ms))
-        rows: List[Dict[str, Any]] = []
-        for rid, name, weight, pagamento, dataOra, abbuono in cur.fetchall():
-            rows.append({
-                "id": rid,
-                "name": name,
-                "weight": float(weight or 0.0),
-                "pagamento": pagamento or "",
-                "dataOra": int(dataOra or 0),
-                "abbuono": float(abbuono or 0.0),
+        return self.fetch_range(d, d)
+
+    def fetch_range(self, from_date: date, to_date: date) -> List[Dict[str, Any]]:
+        """Legge tutte le moliture nell'intervallo con UNA query indicizzata.
+
+        I limiti sono inclusivi e calcolati in Europe/Rome, anche nei giorni
+        dei cambi di ora legale.
+        """
+        if to_date < from_date:
+            raise ValueError("La data finale non può precedere quella iniziale.")
+        start_ms, _ = day_bounds_ts_ms(from_date)
+        _, end_ms = day_bounds_ts_ms(to_date)
+        with sqlite3.connect(self.db_path, timeout=20) as con:
+            con.row_factory = sqlite3.Row
+            records = con.execute("""
+                SELECT id, name, weight, pagamento, dataOra, abbuono
+                FROM moliture
+                WHERE dataOra BETWEEN ? AND ?
+                ORDER BY dataOra ASC, id ASC
+            """, (start_ms, end_ms)).fetchall()
+        return [
+            {
+                "id": r["id"],
+                "name": r["name"],
+                "weight": float(r["weight"] or 0.0),
+                "pagamento": r["pagamento"] or "",
+                "dataOra": int(r["dataOra"] or 0),
+                "abbuono": float(r["abbuono"] or 0.0),
                 "_source": "sqlite",
-            })
-        con.close()
-        return rows
+            }
+            for r in records
+        ]
 
     def update_fields(self, rid: str, changes: Dict[str, Any], local_override: bool = False) -> None:
         """Aggiorna i soli campi richiesti con una transazione.
