@@ -12,6 +12,7 @@ from app_frantoio.util.time_utils import fmt_ts
 from app_frantoio.ui.reports_widget import ReportsPage
 from app_frantoio.ui.edit_record_dialog import EditRecordDialog
 from app_frantoio.ui.theme import MODERN_STYLESHEET
+from app_frantoio.ui.calendar import configure_calendar
 
 if TYPE_CHECKING:
     from app_frantoio.core.repository import HybridRepository
@@ -154,6 +155,7 @@ class MainWindow(QtWidgets.QMainWindow):
         # tracking selezione per evitare "rimbalzi" dopo refresh
         self._last_selected_id: Optional[str] = None
         self._sel_serial: int = 0  # aumenta ad ogni cambio selezione
+        self._updating_table = False
 
         self.setWindowTitle("Frantoio | Gestione moliture")
         self.setStyleSheet(MODERN_STYLESHEET)
@@ -174,6 +176,7 @@ class MainWindow(QtWidgets.QMainWindow):
         controls = QtWidgets.QHBoxLayout()
         controls.addWidget(QtWidgets.QLabel("Data:"))
         self.date_edit = QtWidgets.QDateEdit(calendarPopup=True)
+        configure_calendar(self.date_edit)
         self.date_edit.setDate(QtCore.QDate.currentDate())
         self.date_edit.setDisplayFormat("dd/MM/yyyy")
         controls.addWidget(self.date_edit)
@@ -194,9 +197,12 @@ class MainWindow(QtWidgets.QMainWindow):
         self.proxy.setSourceModel(self.model)
         self.proxy.setFilterCaseSensitivity(QtCore.Qt.CaseSensitivity.CaseInsensitive)
         self.proxy.setFilterKeyColumn(-1)
+        self.proxy.setSortRole(QtCore.Qt.ItemDataRole.UserRole)
         self.table.setModel(self.proxy)
         self.table.setAlternatingRowColors(True)
         self.table.setSortingEnabled(True)
+        # Dalla prima molitura all'ultima, secondo il timestamp reale.
+        self.table.sortByColumn(4, QtCore.Qt.SortOrder.AscendingOrder)
         self.table.verticalHeader().setDefaultSectionSize(43)
         self.table.verticalHeader().setVisible(False)
         self.table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectionBehavior.SelectRows)
@@ -260,8 +266,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self.sync_timer.timeout.connect(self.auto_sync)
 
         # Signals
-        self.date_edit.dateChanged.connect(self.refresh_data)          # show_cursor=True (default)
-        self.btn_refresh.clicked.connect(self.refresh_data)            # show_cursor=True (default)
+        self.date_edit.dateChanged.connect(lambda _date: self.refresh_data(show_cursor=True))
+        self.btn_refresh.clicked.connect(lambda _checked=False: self.refresh_data(show_cursor=True))
         self.btn_export.clicked.connect(self.export_excel)
         self.btn_edit_row.clicked.connect(self.on_edit_clicked)
         self.table.doubleClicked.connect(self.on_edit_clicked)
@@ -277,38 +283,52 @@ class MainWindow(QtWidgets.QMainWindow):
 
     # ---------------------- Helpers selezione ----------------------
     def _on_selection_changed(self, selected: QtCore.QItemSelection, deselected: QtCore.QItemSelection):
-        cur = self._current_selected_id()
-        if cur:
-            self._last_selected_id = cur
+        if self._updating_table:
+            return
+        self._last_selected_id = self._current_selected_id()
         self._sel_serial += 1
 
     def _current_selected_id(self) -> Optional[str]:
-        sel = self.table.selectionModel().selectedRows()
-        if not sel:
-            return None
-        row = self.model.row_at(self.proxy.mapToSource(sel[0]).row())
-        return row.get("id")
-
-    def _reselect_by_id(self, rid: Optional[str]):
-        if not rid:
-            return
         sm = self.table.selectionModel()
         if sm is None:
-            return
-        rows = self.model.all_rows()
-        for r_idx, r in enumerate(rows):
-            if r.get("id") == rid:
-                idx = self.proxy.mapFromSource(self.model.index(r_idx, 0))
-                if not idx.isValid():
-                    return
+            return None
+        selected = sm.selectedRows()
+        if not selected:
+            return None
+        source = self.proxy.mapToSource(selected[0])
+        if not source.isValid():
+            return None
+        return self.model.row_at(source.row()).get("id")
+
+    def _reselect_by_id(self, rid: Optional[str]) -> bool:
+        """Ripristina la selezione senza scrollTo: mai saltare in cima."""
+        if not rid:
+            return False
+        if self._current_selected_id() == rid:
+            return True  # Qt ha già mantenuto la selezione: non toccarla.
+        sm = self.table.selectionModel()
+        if sm is None:
+            return False
+        for row_index, row in enumerate(self.model.all_rows()):
+            if row.get("id") != rid:
+                continue
+            proxy_idx = self.proxy.mapFromSource(self.model.index(row_index, 0))
+            if not proxy_idx.isValid():
+                return False  # record nascosto dal filtro, non forzare la vista
+            blocker = QtCore.QSignalBlocker(sm)
+            try:
                 sm.select(
-                    idx,
+                    proxy_idx,
                     QtCore.QItemSelectionModel.SelectionFlag.ClearAndSelect
                     | QtCore.QItemSelectionModel.SelectionFlag.Rows,
                 )
-                self.table.setCurrentIndex(idx)
-                self.table.scrollTo(idx, QtWidgets.QAbstractItemView.ScrollHint.PositionAtCenter)
-                break
+                sm.setCurrentIndex(
+                    proxy_idx, QtCore.QItemSelectionModel.SelectionFlag.NoUpdate
+                )
+            finally:
+                del blocker
+            return True
+        return False
 
     def _selected_date(self) -> date:
         qd = self.date_edit.date()
@@ -345,66 +365,94 @@ class MainWindow(QtWidgets.QMainWindow):
 
     # ---------------------- Refresh (in background) ----------------------
     def refresh_data(self, show_cursor: bool = True):
-        # non refreshare durante l'editing o se già occupati
         if self.table.state() == QtWidgets.QAbstractItemView.State.EditingState:
             return
         if self._busy or self._save_busy:
             return
 
-        d = self._selected_date()
-        prev_id = self._current_selected_id()
-        vscroll = self.table.verticalScrollBar().value()
-
-        # seriale selezione all'avvio del refresh
-        sel_serial_start = self._sel_serial
+        requested_date = self._selected_date()
+        selection_at_start = self._current_selected_id()
+        serial_at_start = self._sel_serial
 
         if show_cursor:
             self._set_busy(True)
         else:
-            # niente icona: solo flag per evitare re-ingressi
+            # Il polling non deve disabilitare la tabella o rubare il focus.
             self._busy = True
 
-        def _fetch():
-            return self.repo.fetch_day(d)
-
-        worker = _FuncWorker(_fetch)
+        worker = _FuncWorker(self.repo.fetch_day, requested_date)
         worker.signals.done.connect(
-            lambda rows: self._on_refresh_done(rows, prev_id, vscroll, show_cursor, sel_serial_start)
+            lambda rows: self._on_refresh_done(
+                rows, requested_date, selection_at_start, serial_at_start, show_cursor
+            )
         )
-        worker.signals.error.connect(lambda msg: self._on_refresh_error(msg, show_cursor))
+        worker.signals.error.connect(
+            lambda msg: self._on_refresh_error(msg, requested_date, show_cursor)
+        )
         self._pool.start(worker)
 
-    @QtCore.pyqtSlot(object)
-    def _on_refresh_done(self, rows, prev_id, vscroll, show_cursor: bool, sel_serial_start: int):
+    def _on_refresh_done(self, rows, requested_date: date,
+                         selection_at_start: Optional[str],
+                         serial_at_start: int, show_cursor: bool):
+        retry_date = requested_date != self._selected_date()
         try:
-            rows_list = list(rows or [])
-            try:
-                rows_list.sort(key=lambda r: int(float(r.get("dataOra") or 0)))
-            except Exception:
-                pass
-            self.model.set_rows(rows_list)
-            self.update_total(rows_list)
-            self.table.verticalScrollBar().setValue(vscroll)
+            if retry_date:
+                return  # un vecchio fetch non può sostituire i dati del nuovo giorno
 
-            # Se l'utente ha cambiato selezione durante il fetch, rispetta la NUOVA scelta
-            if self._sel_serial != sel_serial_start and self._last_selected_id:
-                self._reselect_by_id(self._last_selected_id)
-            else:
-                # altrimenti ripristina la selezione precedente (se esiste)
-                self._reselect_by_id(prev_id)
+            # Salva lo stato IMMEDIATAMENTE prima di aggiornare i dati: durante
+            # la richiesta in background l'utente può continuare a scorrere.
+            vbar = self.table.verticalScrollBar()
+            hbar = self.table.horizontalScrollBar()
+            vpos, hpos = vbar.value(), hbar.value()
+            selected_now = self._current_selected_id()
+            target = (
+                selected_now if self._sel_serial != serial_at_start
+                else selection_at_start
+            )
+
+            rows_list = list(rows or [])
+            rows_list.sort(key=lambda row: int(float(row.get("dataOra") or 0)))
+
+            self._updating_table = True
+            try:
+                changed = self.model.set_rows(rows_list)
+                if changed:
+                    # Niente reset del modello su polling normale. Se nuovi
+                    # record vengono aggiunti, ripristiniamo esattamente lo
+                    # scroll e solo se necessario la selezione tramite ID.
+                    self._reselect_by_id(target)
+                    vbar.setValue(min(vpos, vbar.maximum()))
+                    hbar.setValue(min(hpos, hbar.maximum()))
+                self._last_selected_id = self._current_selected_id()
+            finally:
+                self._updating_table = False
+
+            self.update_total(rows_list)
         finally:
             if show_cursor:
                 self._set_busy(False)
             else:
                 self._busy = False
+            if retry_date:
+                QtCore.QTimer.singleShot(
+                    0, lambda: self.refresh_data(show_cursor=False)
+                )
 
-    @QtCore.pyqtSlot(str)
-    def _on_refresh_error(self, msg: str, show_cursor: bool):
+    def _on_refresh_error(self, msg: str, requested_date: date,
+                          show_cursor: bool):
         if show_cursor:
             self._set_busy(False)
         else:
             self._busy = False
-        QtWidgets.QMessageBox.warning(self, "Lettura dati", f"Errore: {msg}")
+        if requested_date != self._selected_date():
+            QtCore.QTimer.singleShot(
+                0, lambda: self.refresh_data(show_cursor=False)
+            )
+        elif show_cursor:
+            QtWidgets.QMessageBox.warning(self, "Lettura dati", f"Errore: {msg}")
+        else:
+            # Le disconnessioni temporanee non devono aprire una finestra ogni 3 s.
+            self.statusBar().showMessage(f"Sincronizzazione dati: {msg}", 5000)
 
     def update_total(self, rows):
         total_kg = 0.0
