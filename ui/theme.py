@@ -268,39 +268,180 @@ QMenu {
     border: 1px solid $border;
 }
 QMenu::item:selected { background: $accent_soft; }
+
+/* Layout più arioso e contemporaneo; rosso solo per accenti e azioni. */
+QLabel#sectionEyebrow {
+    color: $accent;
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: 1px;
+}
+QLabel#pageTitle {
+    font-size: 25px;
+    font-weight: 750;
+}
+QFrame#filterCard {
+    color: $text;
+    background: $panel;
+    border: 1px solid $border;
+    border-radius: 20px;
+}
+QWidget#dayControls, QWidget#rangeControls {
+    background: transparent;
+    border: none;
+}
+QFrame#filterCard QLabel { background: transparent; border: none; }
+QTabBar::tab {
+    border: none;
+    border-radius: 12px;
+    background: transparent;
+    padding: 12px 19px;
+    margin: 3px 5px 5px 0;
+}
+QTabBar::tab:selected {
+    background: $accent_soft;
+    color: $accent;
+    border: none;
+}
+QTabBar::tab:hover { background: $panel_hover; }
+QPushButton {
+    background: $panel_alt;
+    border: 1px solid $border;
+    border-radius: 13px;
+    padding: 9px 16px;
+    min-height: 24px;
+    font-weight: 650;
+}
+QPushButton#subtleButton {
+    background: $panel;
+    color: $muted;
+    border-color: $border;
+}
+QPushButton#subtleButton:hover { color: $accent; background: $accent_soft; }
+QPushButton#primaryButton {
+    color: $selected_text;
+    border: 1px solid $accent;
+    border-radius: 13px;
+    background: qlineargradient(x1:0,y1:0,x2:1,y2:0,
+                                stop:0 $accent,stop:1 $gradient_end);
+}
+QLineEdit, QComboBox, QDateEdit, QDateTimeEdit,
+QDoubleSpinBox, QSpinBox {
+    color: $text;
+    background: $panel_alt;
+    border: 1px solid $border;
+    border-radius: 14px;
+    min-height: 30px;
+    padding: 6px 13px;
+    selection-background-color: $accent;
+    selection-color: $selected_text;
+}
+QComboBox { padding-right: 32px; }
+QComboBox:hover, QDateEdit:hover, QDateTimeEdit:hover,
+QLineEdit:hover, QDoubleSpinBox:hover {
+    border-color: $accent;
+}
+QComboBox::drop-down {
+    border: none;
+    width: 30px;
+    background: transparent;
+    border-top-right-radius: 14px;
+    border-bottom-right-radius: 14px;
+}
+QComboBox::down-arrow { width: 9px; height: 9px; }
+QComboBox QAbstractItemView, QListView#softComboPopup {
+    background: $panel;
+    color: $text;
+    border: 1px solid $border;
+    border-radius: 14px;
+    padding: 6px;
+    outline: none;
+    selection-background-color: $accent_soft;
+    selection-color: $text;
+}
+QComboBox QAbstractItemView::item, QListView#softComboPopup::item {
+    border-radius: 9px;
+    padding: 8px 12px;
+    min-height: 23px;
+}
+QComboBox QAbstractItemView::item:selected,
+QListView#softComboPopup::item:selected {
+    color: $accent;
+    background: $accent_soft;
+}
+QComboBox#themeSwitch { min-width: 112px; }
+QHeaderView::section {
+    background: $header;
+    color: $muted;
+    padding: 13px 12px;
+    font-weight: 700;
+}
+QTableView {
+    border: 1px solid $border;
+    border-radius: 15px;
+    gridline-color: transparent;
+}
+QTableView::item {
+    border: none;
+    padding: 10px 10px;
+}
+QTableView::item:selected {
+    background: $accent_soft;
+    color: $text;
+    border: none;
+}
 """)
 
 _CALENDAR_QSS = Template(r"""
 QCalendarWidget {
-    background: $panel;
     color: $text;
+    background: $panel;
     border: 1px solid $border;
-    border-radius: 9px;
+    border-radius: 18px;
 }
 QCalendarWidget QWidget#qt_calendar_navigationbar {
-    background: $header;
+    background: $panel;
+    min-height: 48px;
     border: none;
-    min-height: 38px;
+    border-top-left-radius: 18px;
+    border-top-right-radius: 18px;
 }
 QCalendarWidget QToolButton {
     color: $text;
-    background: transparent;
+    background: $panel_alt;
     border: none;
-    padding: 5px;
-    min-width: 25px;
-    font-weight: 700;
+    border-radius: 12px;
+    margin: 4px 2px;
+    padding: 6px;
+    min-width: 27px;
+    min-height: 26px;
+    font-size: 13px;
+    font-weight: 650;
 }
-QCalendarWidget QToolButton:hover { background: $accent_soft; color: $accent; }
-QCalendarWidget QMenu { background: $panel; color: $text; }
-QCalendarWidget QSpinBox {
+QCalendarWidget QToolButton:hover {
+    color: $accent;
+    background: $accent_soft;
+}
+QCalendarWidget QMenu {
     color: $text;
     background: $panel;
     border: 1px solid $border;
-    padding: 2px 4px;
-    min-height: 22px;
+    border-radius: 12px;
+    padding: 5px;
 }
-QCalendarWidget QAbstractItemView,
-QCalendarWidget QTableView {
+QCalendarWidget QMenu::item:selected {
+    color: $accent;
+    background: $accent_soft;
+}
+QCalendarWidget QSpinBox {
+    color: $text;
+    background: $panel_alt;
+    border: none;
+    border-radius: 9px;
+    min-height: 25px;
+    padding: 3px 6px;
+}
+QCalendarWidget QAbstractItemView, QCalendarWidget QTableView {
     color: $text;
     background: $panel;
     alternate-background-color: $panel;
@@ -310,24 +451,15 @@ QCalendarWidget QTableView {
     selection-background-color: $accent;
     selection-color: $selected_text;
     font-size: 13px;
-    outline: none;
+    outline: 0;
 }
 QCalendarWidget QTableView::item {
-    background: $panel;
-    color: $text;
     border: none;
-    border-radius: 3px;
-    padding: 0;
     margin: 0;
-}
-QCalendarWidget QAbstractItemView::item:selected,
-QCalendarWidget QTableView::item:selected {
-    color: $selected_text;
-    background: $accent;
-    border: none;
+    padding: 0;
+    background: $panel;
 }
 """)
-
 
 def theme_stylesheet(theme: str) -> str:
     return _THEME_QSS.substitute(_COLORS[normalize_theme(theme)])
