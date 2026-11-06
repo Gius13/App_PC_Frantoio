@@ -57,15 +57,10 @@ class HybridRepository:
                 next_day.year, next_day.month, next_day.day,
                 tzinfo=TZ,
             ).timestamp() * 1000)
-            for r in self.fb.fetch():
-                try:
-                    timestamp = int(float(r.get("dataOra") or 0))
-                except (TypeError, ValueError, OverflowError):
-                    continue
-                if start_ms <= timestamp < end_exclusive_ms:
-                    item = r.copy()
-                    item["_source"] = "firebase"
-                    rows.append(item)
+            for r in self.fb.fetch_range(start_ms, end_exclusive_ms):
+                item = r.copy()
+                item["_source"] = "firebase"
+                rows.append(item)
 
         rows.sort(key=lambda row: (int(float(row.get("dataOra") or 0)), str(row.get("id") or "")))
         return rows
