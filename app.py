@@ -1,6 +1,7 @@
 import sys
 from PyQt6 import QtWidgets
 from app_frantoio.util.config import load_config
+from app_frantoio.ui.theme import apply_theme
 from app_frantoio.core.auth import AuthClient
 from app_frantoio.core.fb_client import FirebaseRestClient
 from app_frantoio.core.sqlite_client import SQLiteClient
@@ -19,6 +20,7 @@ def main():
     retention_days = int(cfg.get("retention_days", 7))
     
     app = QtWidgets.QApplication(sys.argv)
+    apply_theme(cfg.get("theme", "light"))
     QtWidgets.QApplication.setWindowIcon(_app_icon())
 
     if not api_key or not db_url:
