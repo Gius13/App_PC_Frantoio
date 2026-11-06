@@ -7,7 +7,8 @@ import unittest
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PyQt6 import QtCore, QtWidgets
+from PyQt6 import QtCore, QtWidgets, QtGui
+from app_frantoio.ui.theme import apply_theme, palette_colors
 
 from app_frantoio.models.moliture_model import MolitureModel
 from app_frantoio.ui.calendar import configure_calendar
@@ -106,6 +107,30 @@ class QtRefreshTests(unittest.TestCase):
         self.assertIn("selection-background-color", calendar.styleSheet())
         edit.setDate(QtCore.QDate(2026, 11, 6))
         self.assertEqual(edit.date(), QtCore.QDate(2026, 11, 6))
+
+
+    def test_calendar_paint_cell_in_both_themes(self):
+        edit = QtWidgets.QDateEdit()
+        configure_calendar(edit)
+        calendar = edit.calendarWidget()
+        date = QtCore.QDate(2026, 11, 6)
+        for theme in ("light", "dark"):
+            apply_theme(theme)
+            calendar.setSelectedDate(date)
+            calendar.showSelectedDate()
+            image = QtGui.QImage(60, 50, QtGui.QImage.Format.Format_ARGB32)
+            image.fill(QtGui.QColor(palette_colors(theme)["panel"]))
+            painter = QtGui.QPainter(image)
+            calendar.paintCell(painter, QtCore.QRect(0, 0, 60, 50), date)
+            painter.end()
+            self.assertFalse(image.isNull())
+            selected = QtGui.QColor(palette_colors(theme)["accent"])
+            self.assertTrue(any(
+                image.pixelColor(x, y) == selected
+                for x in range(6, 54) for y in range(6, 44)
+            ), f"Il giorno selezionato non risulta rosso nel tema {theme}")
+        edit.close()
+        apply_theme("light")
 
 
 if __name__ == "__main__":
