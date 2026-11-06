@@ -148,7 +148,7 @@ class MolitureModel(QtCore.QAbstractTableModel):
             if c == 1: return f"{weight_f:.2f}"
             if c == 2: return f"{prezzo:.2f}"
             if c == 3: return f"{abbuono_f:.2f}"
-            if c == 4: return fmt_ts(ts)
+            if c == 4: return fmt_date_time(ts)
             if c == 5: return pagamento
 
         if role == QtCore.Qt.ItemDataRole.TextAlignmentRole:
