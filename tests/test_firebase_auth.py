@@ -120,6 +120,43 @@ class FirebaseRetryTests(unittest.TestCase):
         )
 
     @patch("app_frantoio.core.fb_client.requests.request")
+    def test_indexed_range_request_fetches_only_dates(self, request):
+        start = 1793894400000
+        end = start + 86400000
+        request.return_value = FakeResponse(200, {
+            "wanted": {"dataOra": start + 1000, "name": "Mario"},
+        })
+        client = self.make_client()
+        result = client.fetch_range(start, end)
+        self.assertEqual([r["id"] for r in result], ["wanted"])
+        self.assertEqual(request.call_count, 1)
+        self.assertEqual(request.call_args.kwargs["params"]["orderBy"], '"dataOra"')
+        self.assertEqual(request.call_args.kwargs["params"]["startAt"], start)
+        self.assertEqual(request.call_args.kwargs["params"]["endAt"], end - 1)
+
+    @patch("app_frantoio.core.fb_client.requests.request")
+    def test_unindexed_database_fallback_is_remembered(self, request):
+        start = 1793894400000
+        end = start + 86400000
+        payload = {"wanted": {"dataOra": start + 1000, "name": "Mario"},
+                   "outside": {"dataOra": end + 1000, "name": "Luigi"}}
+        request.side_effect = [
+            FakeResponse(400, {"error": "Index not defined"}),
+            FakeResponse(200, payload),
+            FakeResponse(200, payload)
+        ]
+        client = self.make_client()
+        self.assertEqual(
+            [r["id"] for r in client.fetch_range(start, end)], ["wanted"]
+        )
+        self.assertFalse(client._range_support)
+        self.assertEqual(
+            [r["id"] for r in client.fetch_range(start, end)], ["wanted"]
+        )
+        self.assertEqual(request.call_count, 3)
+        self.assertNotIn("orderBy", request.call_args.kwargs["params"])
+
+    @patch("app_frantoio.core.fb_client.requests.request")
     def test_get_retries_once_after_401(self, request):
         request.side_effect = [
             FakeResponse(401, {"error": "unauthorized"}),
