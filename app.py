@@ -50,7 +50,11 @@ def main():
             sys.exit(0)
 
     # Clienti
-    fb = FirebaseRestClient(db_url, collection, get_token_callable=lambda: auth.id_token)
+    fb = FirebaseRestClient(
+        db_url, collection,
+        get_token_callable=auth.get_valid_token,
+        refresh_token_callable=auth.refresh_access_token,
+    )
     sql = SQLiteClient(archive_db)
     repo = HybridRepository(fb, sql, hybrid_days, retention_days)
 
