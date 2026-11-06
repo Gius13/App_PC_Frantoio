@@ -10,6 +10,8 @@ from app_frantoio.resources import resource_path
 from app_frantoio.models.moliture_model import MolitureModel
 from app_frantoio.util.time_utils import fmt_ts
 from app_frantoio.ui.reports_widget import ReportsPage
+from app_frantoio.ui.edit_record_dialog import EditRecordDialog
+from app_frantoio.ui.theme import MODERN_STYLESHEET
 
 if TYPE_CHECKING:
     from app_frantoio.core.repository import HybridRepository
@@ -146,12 +148,15 @@ class MainWindow(QtWidgets.QMainWindow):
         self.poll_ms = int(cfg.get("poll_ms", 3000))
         self._export_path = None
         self._busy = False  # fix cursore/ri-entrance
+        self._sync_busy = False
+        self._save_busy = False
 
         # tracking selezione per evitare "rimbalzi" dopo refresh
         self._last_selected_id: Optional[str] = None
         self._sel_serial: int = 0  # aumenta ad ogni cambio selezione
 
-        self.setWindowTitle("Gestione Moliture - PC")
+        self.setWindowTitle("Frantoio | Gestione moliture")
+        self.setStyleSheet(MODERN_STYLESHEET)
         self.resize(1200, 700)
         self.setWindowIcon(_app_icon())
 
@@ -162,6 +167,10 @@ class MainWindow(QtWidgets.QMainWindow):
         page_list = QtWidgets.QWidget()
         vbox = QtWidgets.QVBoxLayout(page_list)
 
+        heading = QtWidgets.QLabel("Gestione moliture")
+        heading.setObjectName("pageTitle")
+        vbox.addWidget(heading)
+
         controls = QtWidgets.QHBoxLayout()
         controls.addWidget(QtWidgets.QLabel("Data:"))
         self.date_edit = QtWidgets.QDateEdit(calendarPopup=True)
@@ -169,6 +178,10 @@ class MainWindow(QtWidgets.QMainWindow):
         self.date_edit.setDisplayFormat("dd/MM/yyyy")
         controls.addWidget(self.date_edit)
         controls.addStretch(1)
+        self.search_edit = QtWidgets.QLineEdit()
+        self.search_edit.setPlaceholderText("Cerca cliente, pagamento o peso...")
+        self.search_edit.setClearButtonEnabled(True)
+        controls.addWidget(self.search_edit, 1)
         self.btn_refresh = QtWidgets.QPushButton("Aggiorna")
         self.btn_export = QtWidgets.QPushButton("Export Excel")
         controls.addWidget(self.btn_refresh)
@@ -177,7 +190,15 @@ class MainWindow(QtWidgets.QMainWindow):
 
         self.table = QtWidgets.QTableView()
         self.model = MolitureModel([], self.euro_per_kg, self)
-        self.table.setModel(self.model)
+        self.proxy = QtCore.QSortFilterProxyModel(self)
+        self.proxy.setSourceModel(self.model)
+        self.proxy.setFilterCaseSensitivity(QtCore.Qt.CaseSensitivity.CaseInsensitive)
+        self.proxy.setFilterKeyColumn(-1)
+        self.table.setModel(self.proxy)
+        self.table.setAlternatingRowColors(True)
+        self.table.setSortingEnabled(True)
+        self.table.verticalHeader().setDefaultSectionSize(43)
+        self.table.verticalHeader().setVisible(False)
         self.table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectionBehavior.SelectRows)
         self.table.setSelectionMode(QtWidgets.QAbstractItemView.SelectionMode.SingleSelection)
         self.table.horizontalHeader().setStretchLastSection(True)
@@ -208,8 +229,12 @@ class MainWindow(QtWidgets.QMainWindow):
         footer.addWidget(QtWidgets.QLabel("Pagamento rapido:"))
         self.cmb_pagamento_quick = QtWidgets.QComboBox()
         self.cmb_pagamento_quick.addItems(["", "Contanti", "POS", "Assegno", "Olio"])
+        self.btn_edit_row = QtWidgets.QPushButton("Modifica record")
+        self.btn_edit_row.setObjectName("primaryButton")
         self.btn_set_pagamento = QtWidgets.QPushButton("Imposta su riga selezionata")
         self.btn_delete_row = QtWidgets.QPushButton("Cancella record selezionato")
+        self.btn_delete_row.setObjectName("dangerButton")
+        footer.addWidget(self.btn_edit_row)
         footer.addWidget(self.cmb_pagamento_quick)
         footer.addWidget(self.btn_set_pagamento)
         footer.addWidget(self.btn_delete_row)
@@ -241,6 +266,9 @@ class MainWindow(QtWidgets.QMainWindow):
         self.date_edit.dateChanged.connect(self.refresh_data)          # show_cursor=True (default)
         self.btn_refresh.clicked.connect(self.refresh_data)            # show_cursor=True (default)
         self.btn_export.clicked.connect(self.export_excel)
+        self.btn_edit_row.clicked.connect(self.on_edit_clicked)
+        self.table.doubleClicked.connect(self.on_edit_clicked)
+        self.search_edit.textChanged.connect(self.proxy.setFilterFixedString)
         self.btn_set_pagamento.clicked.connect(self.on_set_pagamento_clicked)
         self.btn_delete_row.clicked.connect(self.on_delete_clicked)
 
@@ -261,7 +289,7 @@ class MainWindow(QtWidgets.QMainWindow):
         sel = self.table.selectionModel().selectedRows()
         if not sel:
             return None
-        row = self.model.row_at(sel[0].row())
+        row = self.model.row_at(self.proxy.mapToSource(sel[0]).row())
         return row.get("id")
 
     def _reselect_by_id(self, rid: Optional[str]):
@@ -273,7 +301,9 @@ class MainWindow(QtWidgets.QMainWindow):
         rows = self.model.all_rows()
         for r_idx, r in enumerate(rows):
             if r.get("id") == rid:
-                idx = self.model.index(r_idx, 0)
+                idx = self.proxy.mapFromSource(self.model.index(r_idx, 0))
+                if not idx.isValid():
+                    return
                 sm.select(
                     idx,
                     QtCore.QItemSelectionModel.SelectionFlag.ClearAndSelect
@@ -296,7 +326,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
         widgets = [
             self.btn_refresh, self.btn_export,
-            self.btn_set_pagamento, self.btn_delete_row,
+            self.btn_set_pagamento, self.btn_delete_row, self.btn_edit_row,
             self.date_edit, self.table
         ]
         for w in widgets:
@@ -321,7 +351,7 @@ class MainWindow(QtWidgets.QMainWindow):
         # non refreshare durante l'editing o se già occupati
         if self.table.state() == QtWidgets.QAbstractItemView.State.EditingState:
             return
-        if self._busy:
+        if self._busy or self._save_busy:
             return
 
         d = self._selected_date()
@@ -390,17 +420,71 @@ class MainWindow(QtWidgets.QMainWindow):
 
     # ---------------------- Auto-sync (mirror in background) ----------------------
     def auto_sync(self):
-        if self._busy:  # non accavallare con refresh
+        if self._busy or self._sync_busy or self._save_busy:
             return
+        self._sync_busy = True
 
         def _mirror():
             return self.repo.mirror_only()
 
         worker = _FuncWorker(_mirror)
-        worker.signals.done.connect(lambda mirrored: self.statusBar().showMessage(
-            f"Sync eseguito: salvati {mirrored} record su SQLite.", 5000))
-        worker.signals.error.connect(lambda msg: self.statusBar().showMessage(f"Sync fallito: {msg}", 5000))
+        def on_sync_done(mirrored):
+            self._sync_busy = False
+            self.statusBar().showMessage(f"Sincronizzati {mirrored} record.", 5000)
+        def on_sync_error(msg):
+            self._sync_busy = False
+            self.statusBar().showMessage(f"Sincronizzazione non riuscita: {msg}", 7000)
+        worker.signals.done.connect(on_sync_done)
+        worker.signals.error.connect(on_sync_error)
         self._pool.start(worker)
+
+    def on_edit_clicked(self, *args):
+        if self._save_busy or self._busy or self._sync_busy:
+            return
+        selected = self.table.selectionModel().selectedRows()
+        if not selected:
+            QtWidgets.QMessageBox.information(self, "Modifica", "Seleziona una molitura.")
+            return
+        source_index = self.proxy.mapToSource(selected[0])
+        if not source_index.isValid():
+            return
+        original = self.model.row_at(source_index.row()).copy()
+        self.timer.stop()
+        dlg = EditRecordDialog(original, self.euro_per_kg, self)
+        try:
+            if dlg.exec() != QtWidgets.QDialog.DialogCode.Accepted:
+                return
+            changes = dlg.changed_fields()
+            if not changes:
+                self.statusBar().showMessage("Nessuna modifica da salvare.", 3000)
+                return
+            self._save_busy = True
+            self.btn_edit_row.setEnabled(False)
+            self.statusBar().showMessage("Salvataggio modifiche in corso...")
+            worker = _FuncWorker(self.repo.update_record, original, changes)
+            worker.signals.done.connect(lambda result: self._on_record_saved(result))
+            worker.signals.error.connect(lambda msg: self._on_record_save_failed(msg))
+            self._pool.start(worker)
+        finally:
+            if not self._save_busy and not self.timer.isActive():
+                self.timer.start()
+
+    def _on_record_saved(self, changes):
+        self._save_busy = False
+        self.btn_edit_row.setEnabled(True)
+        self.statusBar().showMessage("Modifiche salvate correttamente.", 5000)
+        self.refresh_data(show_cursor=False)
+        self.reports_page.refresh()
+        if not self.timer.isActive():
+            self.timer.start()
+
+    def _on_record_save_failed(self, msg):
+        self._save_busy = False
+        self.btn_edit_row.setEnabled(True)
+        QtWidgets.QMessageBox.warning(self, "Salvataggio non riuscito", msg)
+        self.refresh_data(show_cursor=False)
+        if not self.timer.isActive():
+            self.timer.start()
 
     # ---------------------- Azioni UI ----------------------
     def on_set_pagamento_clicked(self):
@@ -411,7 +495,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 QtWidgets.QMessageBox.information(self, "Pagamento", "Seleziona una riga prima.")
                 return
             idx = idxs[0]
-            row = self.model.row_at(idx.row())
+            row = self.model.row_at(self.proxy.mapToSource(idx).row())
             pagamento = self.cmb_pagamento_quick.currentText()
             rid = row.get("id")
             if not rid:
@@ -420,8 +504,8 @@ class MainWindow(QtWidgets.QMainWindow):
             self.repo.update_pagamento(rid, pagamento, source)
             row["pagamento"] = pagamento
             self.model.dataChanged.emit(
-                self.model.index(idx.row(), 5),
-                self.model.index(idx.row(), 5),
+                self.model.index(self.proxy.mapToSource(idx).row(), 5),
+                self.model.index(self.proxy.mapToSource(idx).row(), 5),
                 [QtCore.Qt.ItemDataRole.DisplayRole],
             )
         except Exception as e:
@@ -436,7 +520,7 @@ class MainWindow(QtWidgets.QMainWindow):
             return
 
         idx = idxs[0]
-        row = self.model.row_at(idx.row())
+        row = self.model.row_at(self.proxy.mapToSource(idx).row())
         rid = row.get("id")
         if not rid:
             QtWidgets.QMessageBox.warning(self, "Cancella", "ID record mancante.")
