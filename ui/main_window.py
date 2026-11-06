@@ -266,7 +266,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self.sync_timer.timeout.connect(self.auto_sync)
 
         # Signals
-        self.date_edit.dateChanged.connect(lambda _date: self.refresh_data(show_cursor=True))
+        # Non disabilitare il selettore mentre si chiude il popup calendario.
+        self.date_edit.dateChanged.connect(lambda _date: self.refresh_data(show_cursor=False))
         self.btn_refresh.clicked.connect(lambda _checked=False: self.refresh_data(show_cursor=True))
         self.btn_export.clicked.connect(self.export_excel)
         self.btn_edit_row.clicked.connect(self.on_edit_clicked)
