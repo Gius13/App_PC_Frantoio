@@ -591,44 +591,42 @@ class MainWindow(QtWidgets.QMainWindow):
 
     # --- salvataggi posticipati ---
     def _save_abbuono(self, rid: str, val: float, source: str):
-        self.timer.stop()
-        try:
-            if source == "firebase":
-                self.repo.update_abbuono(rid, val, "firebase")
-                try:
-                    self.repo.update_abbuono(rid, val, "sqlite")
-                except Exception:
-                    pass
-            else:
-                self.repo.update_abbuono(rid, val, "sqlite")
-
-            self.statusBar().showMessage(f"Abbuono aggiornato a € {val:.2f}", 2000)
-            QtCore.QTimer.singleShot(200, lambda: self.refresh_data(show_cursor=False))
-        except Exception as e:
-            self.statusBar().showMessage(f"Errore salvataggio abbuono: {e}", 4000)
-        finally:
-            if not self.timer.isActive():
-                self.timer.start()
+        self._save_quick_change(
+            lambda: self.repo.update_abbuono(rid, val, source),
+            f"Abbuono aggiornato a € {val:.2f}"
+        )
 
     def _save_pagamento(self, rid: str, val: str, source: str):
-        self.timer.stop()
-        try:
-            if source == "firebase":
-                self.repo.update_pagamento(rid, val, "firebase")
-                try:
-                    self.repo.update_pagamento(rid, val, "sqlite")
-                except Exception:
-                    pass
-            else:
-                self.repo.update_pagamento(rid, val, "sqlite")
+        self._save_quick_change(
+            lambda: self.repo.update_pagamento(rid, val, source),
+            f"Pagamento aggiornato: {val or 'Da saldare'}"
+        )
 
-            self.statusBar().showMessage(f"Pagamento aggiornato: {val}", 2000)
-            QtCore.QTimer.singleShot(200, lambda: self.refresh_data(show_cursor=False))
-        except Exception as e:
-            self.statusBar().showMessage(f"Errore salvataggio pagamento: {e}", 4000)
-        finally:
+    def _save_quick_change(self, action, success_message):
+        if self._save_busy:
+            return
+        self._save_busy = True
+        self.timer.stop()
+        worker = _FuncWorker(action)
+
+        def done(_result):
+            self._save_busy = False
+            self.statusBar().showMessage(success_message, 4000)
+            self.refresh_data(show_cursor=False)
+            self.reports_page.refresh()
             if not self.timer.isActive():
                 self.timer.start()
+
+        def failed(message):
+            self._save_busy = False
+            QtWidgets.QMessageBox.warning(self, "Salvataggio non riuscito", message)
+            self.refresh_data(show_cursor=False)
+            if not self.timer.isActive():
+                self.timer.start()
+
+        worker.signals.done.connect(done)
+        worker.signals.error.connect(failed)
+        self._pool.start(worker)
 
     # ---------------------- Export Excel ----------------------
     def export_excel(self):
