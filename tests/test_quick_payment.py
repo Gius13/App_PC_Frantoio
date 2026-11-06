@@ -116,6 +116,16 @@ class QuickPaymentTests(unittest.TestCase):
         self.assertTrue(self.wait_until(lambda: self.repo.current_payment == "Contanti"))
         self.assertTrue(self.wait_until(lambda: self.payment_in_table() == "Contanti"))
 
+        # Una richiesta iniziata PRIMA del cambio, ma arrivata DOPO
+        # la conferma del server, deve essere ignorata.
+        original_serial = self.window._mutation_serial - 1
+        self.window._on_refresh_done(
+            stale, self.window._applied_scope, "payment-test",
+            self.window._sel_serial, False, original_serial,
+        )
+        self.assertEqual(self.payment_in_table(), "Contanti")
+        self.assertTrue(self.window._refresh_pending)
+
     def test_failure_restores_previous_payment_and_notifies(self):
         self.repo.failed = True
         with patch("app_frantoio.ui.main_window.QtWidgets.QMessageBox.warning") as warning:
