@@ -163,6 +163,38 @@ class MainWindow(QtWidgets.QMainWindow):
         self.resize(1200, 700)
         self.setWindowIcon(_app_icon())
 
+        # Barra superiore sempre visibile, anche nella sezione Report.
+        self.app_toolbar = QtWidgets.QToolBar("Barra principale", self)
+        self.app_toolbar.setObjectName("appToolbar")
+        self.app_toolbar.setMovable(False)
+        self.app_toolbar.setFloatable(False)
+        self.addToolBar(self.app_toolbar)
+        self.brand_label = QtWidgets.QLabel("FRANTOIO")
+        self.brand_label.setObjectName("brandTitle")
+        self.app_toolbar.addWidget(self.brand_label)
+        self.brand_subtitle = QtWidgets.QLabel("  /  Gestione moliture")
+        self.brand_subtitle.setObjectName("brandSubtitle")
+        self.app_toolbar.addWidget(self.brand_subtitle)
+
+        toolbar_spacer = QtWidgets.QWidget(self)
+        toolbar_spacer.setSizePolicy(
+            QtWidgets.QSizePolicy.Policy.Expanding,
+            QtWidgets.QSizePolicy.Policy.Preferred,
+        )
+        self.app_toolbar.addWidget(toolbar_spacer)
+        self.theme_label = QtWidgets.QLabel("Aspetto:  ")
+        self.app_toolbar.addWidget(self.theme_label)
+        self.theme_switch = QtWidgets.QComboBox()
+        self.theme_switch.setObjectName("themeSwitch")
+        self.theme_switch.setAccessibleName("Selezione tema dell'applicazione")
+        self.theme_switch.addItem("Chiaro", "light")
+        self.theme_switch.addItem("Scuro", "dark")
+        self.theme_switch.setCurrentIndex(1 if self._theme == "dark" else 0)
+        self.theme_switch.setToolTip(
+            "Cambia aspetto. La scelta viene salvata per i prossimi avvii."
+        )
+        self.app_toolbar.addWidget(self.theme_switch)
+
         # TABS
         self.tabs = QtWidgets.QTabWidget(self)
 
@@ -190,18 +222,6 @@ class MainWindow(QtWidgets.QMainWindow):
         self.btn_export = QtWidgets.QPushButton("Export Excel")
         controls.addWidget(self.btn_refresh)
         controls.addWidget(self.btn_export)
-
-        controls.addSpacing(12)
-        self.theme_label = QtWidgets.QLabel("Tema:")
-        controls.addWidget(self.theme_label)
-        self.theme_switch = QtWidgets.QComboBox()
-        self.theme_switch.setObjectName("themeSwitch")
-        self.theme_switch.setAccessibleName("Selezione tema dell'applicazione")
-        self.theme_switch.addItem("Chiaro", "light")
-        self.theme_switch.addItem("Scuro", "dark")
-        self.theme_switch.setCurrentIndex(1 if self._theme == "dark" else 0)
-        self.theme_switch.setToolTip("Cambia aspetto. La scelta viene salvata per i prossimi avvii.")
-        controls.addWidget(self.theme_switch)
         vbox.addLayout(controls)
 
         self.table = QtWidgets.QTableView()
