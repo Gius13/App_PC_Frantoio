@@ -98,6 +98,19 @@ class QtRefreshTests(unittest.TestCase):
             for i in range(3)
         ]
         self.assertEqual(order, ["record-2", "record-1", "record-3"])
+        # La tabella mostra solo HH:mm; l'ordinamento usa comunque
+        # il timestamp numerico completo (anche per più giorni).
+        self.assertEqual(self.model.headerData(
+            4, QtCore.Qt.Orientation.Horizontal, QtCore.Qt.ItemDataRole.DisplayRole
+        ), "Ora")
+        displayed = self.model.data(
+            self.model.index(0, 4), QtCore.Qt.ItemDataRole.DisplayRole
+        )
+        self.assertRegex(displayed, r"^\d{2}:\d{2}$")
+        self.assertEqual(
+            self.model.data(self.model.index(0, 4), QtCore.Qt.ItemDataRole.UserRole),
+            t0 + 20_000,
+        )
 
     def test_calendar_uses_independent_style(self):
         edit = QtWidgets.QDateEdit()
