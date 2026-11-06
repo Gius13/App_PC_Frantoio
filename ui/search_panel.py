@@ -56,17 +56,13 @@ class MolitureSearchPanel(QtWidgets.QFrame):
         self.mode_combo.setAccessibleName("Modalità ricerca per data")
         date_row.addWidget(self.mode_combo)
 
-        self.day_group = QtWidgets.QWidget(self)
-        self.day_group.setObjectName("dayControls")
-        day_layout = QtWidgets.QHBoxLayout(self.day_group)
-        day_layout.setContentsMargins(0, 0, 0, 0)
-        day_layout.addWidget(QtWidgets.QLabel("Data"))
-        self.date_edit = QtWidgets.QDateEdit()
+        # Il giorno singolo viene mostrato nella barra superiore principale,
+        # fuori dal pannello filtri. Rimane sempre disponibile.
+        self.date_edit = QtWidgets.QDateEdit(self)
         self.date_edit.setDisplayFormat("dd/MM/yyyy")
+        self.date_edit.setAccessibleName("Seleziona il giorno delle moliture")
         configure_calendar(self.date_edit)
         self.date_edit.setDate(QtCore.QDate.currentDate())
-        day_layout.addWidget(self.date_edit)
-        date_row.addWidget(self.day_group)
 
         self.range_group = QtWidgets.QWidget(self)
         self.range_group.setObjectName("rangeControls")
@@ -136,7 +132,7 @@ class MolitureSearchPanel(QtWidgets.QFrame):
         self.range_group.hide()
         self.btn_apply.hide()
         self.mode_combo.currentIndexChanged.connect(self._mode_changed)
-        self.date_edit.dateChanged.connect(lambda _date: self.scopeChanged.emit())
+        self.date_edit.dateChanged.connect(self._day_changed)
         self.btn_apply.clicked.connect(lambda _checked=False: self.searchRequested.emit())
         self.btn_clear.clicked.connect(self.reset_filters)
         self.search_edit.textChanged.connect(lambda _value: self.filtersChanged.emit())
@@ -154,9 +150,16 @@ class MolitureSearchPanel(QtWidgets.QFrame):
         left, right = py_date(self.date_from.date()), py_date(self.date_to.date())
         return (left, right) if left <= right else (right, left)
 
+    def _day_changed(self, _date: QtCore.QDate):
+        """Cambiare il giorno riporta alla vista giornaliera, anche da range."""
+        if self.is_range_mode():
+            # _mode_changed emette già scopeChanged una volta sola.
+            self.mode_combo.setCurrentIndex(0)
+        else:
+            self.scopeChanged.emit()
+
     def _mode_changed(self, _index: int):
         expanded = self.is_range_mode()
-        self.day_group.setVisible(not expanded)
         self.range_group.setVisible(expanded)
         self.btn_apply.setVisible(expanded)
         self.scopeChanged.emit()
