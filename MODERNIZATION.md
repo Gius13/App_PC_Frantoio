@@ -54,3 +54,42 @@ dell'ambiente e il funzionamento dell'interfaccia vanno verificati sul PC target
 3. Report con KPI, filtri data, grafici e ricerca globale d'archivio.
 4. Backup guidato, ripristino controllato e verifica database.
 5. Ottimizzazione delle letture Firebase e gestione della scadenza dei token.
+
+
+## Correzioni calendario e aggiornamento lista (6 novembre 2026)
+
+- Il calendario ha un proprio stile, separato da quello della tabella delle moliture.
+  Impostati lunedì come primo giorno, dimensione minima del popup, colori
+  delle celle e del giorno selezionato.
+- La scelta della data non disabilita più immediatamente il selettore durante
+  la chiusura del popup.
+- Il modello Qt aggiorna solo righe inserite, rimosse o cambiate: se la risposta
+  del polling è identica, non emette nemmeno un reset.
+- La riga selezionata resta selezionata per ID, senza `scrollTo`, e non
+  si forza più lo scorrimento al centro a ogni aggiornamento.
+- La posizione delle scrollbar viene rilevata al momento in cui arrivano
+  i nuovi dati, non all'avvio della richiesta, così uno scroll effettuato
+  durante il polling non viene sovrascritto.
+- Il proxy ordina di default per `dataOra` numerico crescente (colonna "Ora"),
+  ma consente ancora il riordino manuale delle altre colonne.
+- Una richiesta per una data ormai cambiata viene scartata e ripetuta per
+  la nuova data, evitando la comparsa temporanea di record del giorno precedente.
+
+### Prova su macOS
+
+```bash
+cd ~/Frantoio-Test/app_frantoio
+git pull --ff-only origin feature/modern-ui-record-editing
+cd ..
+source .venv/bin/activate
+python -m unittest discover -s app_frantoio/tests -v
+python -m app_frantoio.app
+```
+
+Per il collaudo manuale: selezionare una riga in fondo, scorrere, aspettare
+due o tre cicli di aggiornamento, inserire un nuovo record da un'altra postazione
+e verificare che selezione, focus e posizione restino invariati.
+Provare anche i calendari di Lista, Report e Modifica record.
+
+Il test automatizzato dell'interfaccia usa il plugin Qt `offscreen`: non
+sostituisce la verifica visiva su macOS.
