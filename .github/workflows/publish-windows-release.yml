@@ -1,4 +1,4 @@
-name: Pubblica installer Frantoio v0.2.1 su GitHub Releases
+name: Pubblica installer Frantoio v0.2.2 su GitHub Releases
 
 on:
   workflow_dispatch:
@@ -20,7 +20,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: App-Frantoio-Installer-Windows-x64
-          run-id: 42260408900
+          run-id: 42264789753
           github-token: ${{ secrets.GITHUB_TOKEN }}
           path: installer
 
@@ -48,11 +48,17 @@ jobs:
         shell: bash
         run: |
           cat > NOTE_RELEASE.md <<'EOF'
-          ## App Frantoio v0.2.1 — Anteprima Windows 64 bit
+          ## App Frantoio v0.2.2 — Anteprima Windows 64 bit
 
           Installer completo **Setup_App_Frantoio.exe** per Windows 10/11 a 64 bit.
-          Include interfaccia chiaro/scuro, modifica moliture, aggiornamento
-          dati piu fluido, selettori con frecce rosse e rinnovo sessione Firebase.
+          Correzione del pulsante **Applica pagamento**:
+          - il valore compare immediatamente sulla riga;
+          - polling e sincronizzazioni non ignorano i clic;
+          - salvataggi falliti ripristinano il valore precedente;
+          - le risposte obsolete Firebase non sovrascrivono le modifiche.
+
+          Mantiene interfaccia chiaro/scuro, filtri multi-giorno,
+          selettori con frecce rosse e rinnovo sessione Firebase.
 
           **Prima di installare:** chiudere la vecchia versione ed effettuare
           una copia di sicurezza dell'archivio SQLite e di
@@ -64,13 +70,13 @@ jobs:
           Controllare la destinazione in fase d'installazione.
 
           Questa e una versione **pre-release** del branch di sviluppo:
-          il comportamento e stato verificato da 44 test su Windows e da una
+          il comportamento e stato verificato da 47 test su Windows e da una
           installazione automatica, ma resta da collaudare sul database reale.
 
           Per controllare l'integrita dell'installer usare `SHA256.txt`.
 
-          Build verificata: [GitHub Actions 42260408900](https://github.com/Gius13/App_PC_Frantoio/actions/runs/42260408900).
-          Commit sorgente: `d6d647eaf622142b8c55cbe0f6294081851503d2`.
+          Build verificata: [GitHub Actions 42264789753](https://github.com/Gius13/App_PC_Frantoio/actions/runs/42264789753).
+          Commit sorgente: `6ecf7b51f31e1fc85857f56149c9365928182028`.
           EOF
 
       - name: Pubblica prerelease con i file dell installer
@@ -79,12 +85,12 @@ jobs:
           GH_REPO: Gius13/App_PC_Frantoio
         shell: bash
         run: |
-          gh release create v0.2.1-beta.1 \
+          gh release create v0.2.2-beta.1 \
             installer/Setup_App_Frantoio.exe \
             installer/SHA256.txt \
             installer/ISTRUZIONI.txt \
-            --target d6d647eaf622142b8c55cbe0f6294081851503d2 \
-            --title 'App Frantoio v0.2.1 (Windows - Beta)' \
+            --target 6ecf7b51f31e1fc85857f56149c9365928182028 \
+            --title 'App Frantoio v0.2.2 (Windows - Beta)' \
             --notes-file NOTE_RELEASE.md \
             --prerelease
 
@@ -94,4 +100,4 @@ jobs:
           GH_REPO: Gius13/App_PC_Frantoio
         shell: bash
         run: |
-          gh release view v0.2.1-beta.1 --json url,assets --jq '.url, (.assets[].name)'
+          gh release view v0.2.2-beta.1 --json url,assets --jq '.url, (.assets[].name)'
