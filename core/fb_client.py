@@ -8,8 +8,10 @@ Tutte le operazioni usano lo stesso flusso:
 from __future__ import annotations
 
 from typing import Any, Callable, Dict, List
+import json
 
 import requests
+import threading
 
 
 class FirebaseRequestError(RuntimeError):
@@ -26,6 +28,8 @@ class FirebaseRestClient:
         self.collection = collection.strip("/")
         self._get_token = get_token_callable
         self._refresh_token = refresh_token_callable
+        self._range_support = None  # None=non verificato; False=fallback legacy
+        self._range_lock = threading.RLock()
 
     def _url(self, path: str = "") -> str:
         return f"{self.db_url}/{self.collection}{path}.json"
@@ -33,11 +37,14 @@ class FirebaseRestClient:
     def _request(
         self, method: str, path: str = "",
         payload: Any = None, timeout: int = 30,
+        query: Dict[str, Any] | None = None,
     ) -> Any:
         token = self._get_token() if callable(self._get_token) else None
 
         def call(token_for_request):
-            params = {"auth": token_for_request} if token_for_request else {}
+            params = dict(query or {})
+            if token_for_request:
+                params["auth"] = token_for_request
             try:
                 return requests.request(
                     method, self._url(path), params=params,
@@ -81,9 +88,8 @@ class FirebaseRestClient:
         except (ValueError, TypeError):
             raise FirebaseRequestError("Risposta non valida ricevuta da Firebase.") from None
 
-    def fetch(self) -> List[Dict[str, Any]]:
-        """Legge i record della collection, senza duplicazioni."""
-        data = self._request("GET", timeout=30)
+    @staticmethod
+    def _rows_from_payload(data: Any) -> List[Dict[str, Any]]:
         rows: List[Dict[str, Any]] = []
         if isinstance(data, dict):
             for key, val in data.items():
@@ -96,6 +102,54 @@ class FirebaseRestClient:
                         row["abbuono"] = 0.0
                     rows.append(row)
         return rows
+
+    def fetch(self) -> List[Dict[str, Any]]:
+        """Mirror completo; non usato nel polling del giorno."""
+        return self._rows_from_payload(self._request("GET", timeout=30))
+
+    def fetch_range(self, start_ms: int, end_exclusive_ms: int) -> List[Dict[str, Any]]:
+        """Scarica solo il periodo richiesto, se l'indice Firebase è abilitato.
+
+        Per attivare la query rapida sulle Realtime Database Rules:
+        "molitura": { ".indexOn": ["dataOra"] }
+        Se l'indice manca (HTTP 400), mantiene il comportamento precedente
+        con filtraggio locale, senza bloccare la visualizzazione.
+        """
+        if self._range_support is False:
+            return self._legacy_range(start_ms, end_exclusive_ms)
+
+        query = {
+            "orderBy": json.dumps("dataOra"),
+            "startAt": int(start_ms),
+            "endAt": int(end_exclusive_ms) - 1,
+        }
+        try:
+            data = self._request("GET", query=query, timeout=15)
+        except FirebaseRequestError as exc:
+            if "HTTP 400" not in str(exc):
+                raise
+            with self._range_lock:
+                self._range_support = False
+            return self._legacy_range(start_ms, end_exclusive_ms)
+
+        self._range_support = True
+        return [
+            r for r in self._rows_from_payload(data)
+            if start_ms <= self._timestamp_ms(r) < end_exclusive_ms
+        ]
+
+    @staticmethod
+    def _timestamp_ms(row: Dict[str, Any]) -> int:
+        try:
+            return int(float(row.get("dataOra") or 0))
+        except (ValueError, OverflowError, TypeError):
+            return -1
+
+    def _legacy_range(self, start_ms: int, end_exclusive_ms: int) -> List[Dict[str, Any]]:
+        return [
+            r for r in self.fetch()
+            if start_ms <= self._timestamp_ms(r) < end_exclusive_ms
+        ]
 
     def update_fields(self, push_id: str, changes: Dict[str, Any]):
         """PATCH parziale: mantiene gli altri campi del record."""
