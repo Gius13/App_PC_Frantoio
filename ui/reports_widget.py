@@ -3,6 +3,7 @@ from datetime import date, timedelta
 from typing import TYPE_CHECKING, Dict, Tuple, List, Callable
 
 from PyQt6 import QtWidgets, QtCore, QtGui
+from app_frantoio.ui.calendar import configure_calendar
 
 if TYPE_CHECKING:
     from app_frantoio.core.repository import HybridRepository
@@ -66,12 +67,14 @@ class ReportsPage(QtWidgets.QWidget):
         ctrls_row1 = QtWidgets.QHBoxLayout()
         ctrls_row1.addWidget(QtWidgets.QLabel("Dal:"))
         self.dt_from = QtWidgets.QDateEdit(calendarPopup=True)
+        configure_calendar(self.dt_from)
         self.dt_from.setDisplayFormat("dd/MM/yyyy")
         self.dt_from.setDate(QtCore.QDate.currentDate())
         ctrls_row1.addWidget(self.dt_from)
 
         ctrls_row1.addWidget(QtWidgets.QLabel("Al:"))
         self.dt_to = QtWidgets.QDateEdit(calendarPopup=True)
+        configure_calendar(self.dt_to)
         self.dt_to.setDisplayFormat("dd/MM/yyyy")
         self.dt_to.setDate(QtCore.QDate.currentDate())
         ctrls_row1.addWidget(self.dt_to)
