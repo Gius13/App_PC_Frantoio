@@ -26,7 +26,8 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "retention_days": 7,
     "euro_per_kg": 0.30,
     "poll_ms": 3000,
-    "mirror_interval_minutes": 5
+    "mirror_interval_minutes": 5,
+    "theme": "light"  # light | dark
 }
 
 def _migrate_legacy_file(target: Path):
