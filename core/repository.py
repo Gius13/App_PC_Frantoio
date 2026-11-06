@@ -67,17 +67,25 @@ class HybridRepository:
 
     def update_pagamento(self, rid: str, pagamento: str, source: str):
         if source == "firebase":
-            return self.fb.update_pagamento(rid, pagamento)
+            self.fb.update_pagamento(rid, pagamento)
+            try:
+                self.sql.update_fields(rid, {"pagamento": pagamento})
+            except LookupError:
+                pass
         elif source == "sqlite":
-            return self.sql.update_pagamento(rid, pagamento)
+            self.sql.update_fields(rid, {"pagamento": pagamento}, local_override=True)
         else:
             raise ValueError("Sorgente sconosciuta per update")
 
     def update_abbuono(self, rid: str, abbuono: float, source: str = "sqlite"):
         if source == "firebase":
-            return self.fb.update_abbuono(rid, abbuono)
+            self.fb.update_abbuono(rid, abbuono)
+            try:
+                self.sql.update_fields(rid, {"abbuono": float(abbuono)})
+            except LookupError:
+                pass
         elif source == "sqlite":
-            return self.sql.update_abbuono(rid, abbuono)
+            self.sql.update_fields(rid, {"abbuono": float(abbuono)}, local_override=True)
         else:
             raise ValueError("Sorgente sconosciuta per update")
 
