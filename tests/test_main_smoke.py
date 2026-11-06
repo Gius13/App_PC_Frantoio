@@ -6,6 +6,7 @@ from datetime import datetime, timedelta
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PyQt6 import QtWidgets, QtCore, QtTest
+from unittest.mock import patch
 
 from app_frantoio.ui.main_window import MainWindow
 from app_frantoio.util.time_utils import TZ
@@ -97,6 +98,40 @@ class MainWindowSmokeTest(unittest.TestCase):
             w.sync_timer.stop()
             w.close()
 
+    def test_editor_opens_during_background_refresh_and_sync(self):
+        # Regressione: il vecchio codice tornava subito da on_edit_clicked
+        # quando _busy o _sync_busy erano True.
+        repo = FakeRepository()
+        w = MainWindow(
+            {"theme": "light", "euro_per_kg": 0.16,
+             "poll_ms": 300000, "mirror_interval_minutes": 9999}, repo
+        )
+        try:
+            w.timer.stop()
+            w.sync_timer.stop()
+            w.model.set_rows([{
+                "id": "test-row", "name": "Mario",
+                "weight": 100, "abbuono": 0, "pagamento": "",
+                "dataOra": 1793952000000, "_source": "firebase"
+            }])
+            self.app.processEvents()
+            w.table.selectRow(0)
+            w._busy = True
+            w._sync_busy = True
+            with patch("app_frantoio.ui.main_window.EditRecordDialog") as dialog:
+                dialog.return_value.exec.return_value = (
+                    QtWidgets.QDialog.DialogCode.Rejected
+                )
+                w.on_edit_clicked()
+                dialog.assert_called_once()
+                dialog.return_value.exec.assert_called_once()
+            self.assertFalse(w._edit_open)
+            self.assertTrue(w.btn_edit_row.isEnabled())
+        finally:
+            w.timer.stop()
+            w.sync_timer.stop()
+            w.close()
+
     def test_window_assembles_and_range_controls_work(self):
         repo = FakeRepository()
         w = MainWindow(
@@ -110,7 +145,7 @@ class MainWindowSmokeTest(unittest.TestCase):
             self.assertEqual(w.proxy.sortColumn(), 4)
             self.assertEqual(
                 w.table.horizontalHeader().sectionResizeMode(0),
-                QtWidgets.QHeaderView.ResizeMode.ResizeToContents,
+                QtWidgets.QHeaderView.ResizeMode.Interactive,
             )
             self.assertEqual(w.filters.mode_combo.currentData(), "day")
             self.assertIsNotNone(w.filters.date_edit.calendarWidget())
