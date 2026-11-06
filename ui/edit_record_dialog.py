@@ -8,6 +8,7 @@ from PyQt6 import QtWidgets, QtCore
 
 from app_frantoio.core.record_validation import validate_record_changes
 from app_frantoio.util.time_utils import TZ
+from app_frantoio.ui.calendar import configure_calendar
 
 
 class EditRecordDialog(QtWidgets.QDialog):
@@ -62,7 +63,7 @@ class EditRecordDialog(QtWidgets.QDialog):
         form.addRow("Pagamento", self.payment_edit)
 
         self.datetime_edit = QtWidgets.QDateTimeEdit()
-        self.datetime_edit.setCalendarPopup(True)
+        configure_calendar(self.datetime_edit)
         self.datetime_edit.setDisplayFormat("dd/MM/yyyy HH:mm:ss")
         timestamp = int(float(record.get("dataOra") or 0))
         if timestamp > 0:
