@@ -156,6 +156,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._save_busy = False
         self._edit_open = False
         self._suppress_model_auto_save = False
+        self._mutation_serial = 0  # invalida i fetch partiti prima di una scrittura
 
         # tracking selezione per evitare "rimbalzi" dopo refresh
         self._last_selected_id: Optional[str] = None
@@ -523,6 +524,7 @@ class MainWindow(QtWidgets.QMainWindow):
             return
 
         requested_scope = self._applied_scope
+        mutation_at_start = self._mutation_serial
         selection_at_start = self._current_selected_id()
         serial_at_start = self._sel_serial
 
@@ -535,7 +537,7 @@ class MainWindow(QtWidgets.QMainWindow):
         worker.signals.done.connect(
             lambda rows: self._on_refresh_done(
                 rows, requested_scope, selection_at_start,
-                serial_at_start, show_cursor
+                serial_at_start, show_cursor, mutation_at_start
             )
         )
         worker.signals.error.connect(
@@ -556,12 +558,15 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def _on_refresh_done(self, rows, requested_scope: tuple[date, date],
                          selection_at_start: Optional[str],
-                         serial_at_start: int, show_cursor: bool):
+                         serial_at_start: int, show_cursor: bool,
+                         mutation_at_start: Optional[int] = None):
         try:
             # Scarta un vecchio snapshot caricato mentre un pagamento
             # veniva aggiornato: altrimenti sovrascriverebbe la cella subito.
             if (requested_scope != self._applied_scope
-                    or self._edit_open or self._save_busy):
+                    or self._edit_open or self._save_busy
+                    or (mutation_at_start is not None
+                        and mutation_at_start != self._mutation_serial)):
                 self._refresh_pending = True
                 return
 
@@ -873,6 +878,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self._save_busy = True
         self.btn_set_pagamento.setEnabled(False)
         self.timer.stop()
+        # Non accettare un risultato Firebase partito prima di questa modifica.
+        self._mutation_serial += 1
         if optimistic is not None:
             rid, new_values, _old_values = optimistic
             self._patch_row_without_auto_save(rid, new_values)
