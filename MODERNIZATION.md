@@ -93,3 +93,36 @@ Provare anche i calendari di Lista, Report e Modifica record.
 
 Il test automatizzato dell'interfaccia usa il plugin Qt `offscreen`: non
 sostituisce la verifica visiva su macOS.
+
+
+## Temi chiaro e scuro (nero, antracite e rosso)
+
+- L'app supporta due palette coordinate: **Chiaro** (fondo grigio chiarissimo,
+  pannelli bianchi, testi quasi neri e rosso carminio) e **Scuro** (fondo quasi
+  nero, pannelli antracite, testo bianco e rosso più luminoso).
+- Il selettore **Aspetto: Chiaro / Scuro** si trova in alto a destra nella
+  barra principale ed è accessibile anche mentre si visualizzano i Report.
+- Il cambio avviene subito, senza riavvio, su tutta l'applicazione.
+- La preferenza viene salvata nel campo \`theme\` del file
+  \`config.json\` dell'utente; al successivo avvio viene recuperata e
+  applicata prima del login.
+- Anche calendari e dialog di modifica vengono aggiornati, e le tabelle
+  rispettano il contrasto del tema selezionato.
+- I pulsanti principali e la barra superiore hanno sfumature rosse, non blu.
+- La preferenza iniziale per installazioni esistenti è \`light\`, in modo da
+  non alterare inaspettatamente l'aspetto dell'applicazione.
+
+### Aggiornamento sul Mac
+
+\`\`\`bash
+cd ~/Frantoio-Test/app_frantoio
+git pull --ff-only origin feature/modern-ui-record-editing
+cd ..
+source .venv/bin/activate
+python -m unittest discover -s app_frantoio/tests -v
+python -m app_frantoio.app
+\`\`\`
+
+Per verificare: alternare tra Chiaro e Scuro mentre si osservano la lista
+moliture, i report, i calendari e la finestra di modifica; chiudere e riaprire
+l'app e confermare che il tema selezionato venga mantenuto.
