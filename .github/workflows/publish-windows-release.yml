@@ -1,0 +1,97 @@
+name: Pubblica installer Frantoio v0.2.1 su GitHub Releases
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - feature/modern-ui-record-editing
+    paths:
+      - .github/workflows/publish-windows-release.yml
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  publish-release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Scarica installer Windows gia testato da GitHub Actions
+        uses: actions/download-artifact@v4
+        with:
+          name: App-Frantoio-Installer-Windows-x64
+          run-id: 42260408900
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: installer
+
+      - name: Verifica eseguibile, istruzioni e impronta SHA-256
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib
+          directory = Path('installer')
+          setup = directory / 'Setup_App_Frantoio.exe'
+          checksum = directory / 'SHA256.txt'
+          instructions = directory / 'ISTRUZIONI.txt'
+          for file in (setup, checksum, instructions):
+              if not file.is_file() or file.stat().st_size == 0:
+                  raise SystemExit(f'File mancante o vuoto: {file}')
+          expected = checksum.read_text(encoding='utf-8-sig').strip().split()[0].lower()
+          sha = hashlib.sha256(setup.read_bytes()).hexdigest().lower()
+          if sha != expected:
+              raise SystemExit('SHA256 dell installer NON valido')
+          print('Installer valido:', setup.name, 'bytes:', setup.stat().st_size, 'sha256:', sha)
+          PY
+
+      - name: Genera note ufficiali della versione
+        shell: bash
+        run: |
+          cat > NOTE_RELEASE.md <<'EOF'
+          ## App Frantoio v0.2.1 — Anteprima Windows 64 bit
+
+          Installer completo **Setup_App_Frantoio.exe** per Windows 10/11 a 64 bit.
+          Include interfaccia chiaro/scuro, modifica moliture, aggiornamento
+          dati piu fluido, selettori con frecce rosse e rinnovo sessione Firebase.
+
+          **Prima di installare:** chiudere la vecchia versione ed effettuare
+          una copia di sicurezza dell'archivio SQLite e di
+          `%APPDATA%\App_Frantoio\config.json`.
+
+          Installare preferibilmente nella cartella della versione precedente.
+          L'installer non cancella database o configurazione, ma un archivio
+          SQLite con percorso relativo potrebbe trovarsi in una cartella diversa.
+          Controllare la destinazione in fase d'installazione.
+
+          Questa e una versione **pre-release** del branch di sviluppo:
+          il comportamento e stato verificato da 44 test su Windows e da una
+          installazione automatica, ma resta da collaudare sul database reale.
+
+          Per controllare l'integrita dell'installer usare `SHA256.txt`.
+
+          Build verificata: [GitHub Actions 42260408900](https://github.com/Gius13/App_PC_Frantoio/actions/runs/42260408900).
+          Commit sorgente: `d6d647eaf622142b8c55cbe0f6294081851503d2`.
+          EOF
+
+      - name: Pubblica prerelease con i file dell installer
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: Gius13/App_PC_Frantoio
+        shell: bash
+        run: |
+          gh release create v0.2.1-beta.1 \
+            installer/Setup_App_Frantoio.exe \
+            installer/SHA256.txt \
+            installer/ISTRUZIONI.txt \
+            --target d6d647eaf622142b8c55cbe0f6294081851503d2 \
+            --title 'App Frantoio v0.2.1 (Windows - Beta)' \
+            --notes-file NOTE_RELEASE.md \
+            --prerelease
+
+      - name: Conferma disponibilita della release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: Gius13/App_PC_Frantoio
+        shell: bash
+        run: |
+          gh release view v0.2.1-beta.1 --json url,assets --jq '.url, (.assets[].name)'
