@@ -62,6 +62,7 @@ class MolitureSearchPanel(QtWidgets.QFrame):
         date_row.addWidget(self.mode_combo)
 
         self.day_group = QtWidgets.QWidget(self)
+        self.day_group.setObjectName("dayControls")
         day_layout = QtWidgets.QHBoxLayout(self.day_group)
         day_layout.setContentsMargins(0, 0, 0, 0)
         day_layout.addWidget(QtWidgets.QLabel("Data"))
@@ -73,6 +74,7 @@ class MolitureSearchPanel(QtWidgets.QFrame):
         date_row.addWidget(self.day_group)
 
         self.range_group = QtWidgets.QWidget(self)
+        self.range_group.setObjectName("rangeControls")
         range_layout = QtWidgets.QHBoxLayout(self.range_group)
         range_layout.setContentsMargins(0, 0, 0, 0)
         range_layout.setSpacing(10)
