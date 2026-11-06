@@ -207,17 +207,41 @@ class MainWindow(QtWidgets.QMainWindow):
         vbox.setContentsMargins(22, 18, 22, 18)
         vbox.setSpacing(16)
 
+        # Barra compatta: le azioni quotidiane restano visibili, i filtri no.
+        table_toolbar = QtWidgets.QHBoxLayout()
+        table_toolbar.setSpacing(10)
         heading = QtWidgets.QLabel("Moliture")
         heading.setObjectName("pageTitle")
-        vbox.addWidget(heading)
+        table_toolbar.addWidget(heading)
+        table_toolbar.addStretch(1)
+
+        self.filter_summary = QtWidgets.QLabel("Oggi")
+        self.filter_summary.setObjectName("filterSummary")
+        self.filter_summary.setToolTip("Periodo e filtri attualmente applicati")
+        table_toolbar.addWidget(self.filter_summary)
+
+        self.btn_toggle_filters = QtWidgets.QPushButton("Ricerca e filtri")
+        self.btn_toggle_filters.setObjectName("filterToggleButton")
+        self.btn_toggle_filters.setCheckable(True)
+        self.btn_toggle_filters.setChecked(False)
+        self.btn_toggle_filters.setAccessibleName("Mostra o nascondi i filtri di ricerca")
+        self.btn_toggle_filters.setToolTip("Apri i filtri per ricerca, date e pagamenti")
+        table_toolbar.addWidget(self.btn_toggle_filters)
+
+        self.btn_refresh = QtWidgets.QPushButton("Aggiorna")
+        self.btn_refresh.setObjectName("subtleButton")
+        table_toolbar.addWidget(self.btn_refresh)
+        self.btn_export = QtWidgets.QPushButton("Esporta Excel")
+        table_toolbar.addWidget(self.btn_export)
+        vbox.addLayout(table_toolbar)
 
         self.filters = MolitureSearchPanel(self)
         vbox.addWidget(self.filters)
         self.date_edit = self.filters.date_edit
         self.search_edit = self.filters.search_edit
-        self.btn_refresh = self.filters.btn_refresh
-        self.btn_export = self.filters.btn_export
         self._applied_scope = self.filters.scope()
+        self.filters.hide()  # Alla prima apertura si vede solo la tabella.
+        self._update_filter_summary()
 
         self.table = QtWidgets.QTableView()
         self.model = MolitureModel([], self.euro_per_kg, self)
@@ -304,6 +328,10 @@ class MainWindow(QtWidgets.QMainWindow):
             lambda: self.refresh_data(show_cursor=True, apply_scope=True)
         )
         self.filters.filtersChanged.connect(self._apply_local_filters)
+        self.btn_toggle_filters.toggled.connect(self._toggle_filters)
+        self.btn_refresh.clicked.connect(
+            lambda _checked=False: self.refresh_data(show_cursor=True, apply_scope=True)
+        )
         self.btn_export.clicked.connect(self.export_excel)
         self.btn_edit_row.clicked.connect(self.on_edit_clicked)
         self.table.doubleClicked.connect(self.on_edit_clicked)
@@ -317,6 +345,42 @@ class MainWindow(QtWidgets.QMainWindow):
         self.timer.start()
         self.sync_timer.start()
 
+    def _toggle_filters(self, expanded: bool) -> None:
+        """Mostra o nasconde il pannello senza modificare i filtri attivi."""
+        self.filters.setVisible(expanded)
+        self.btn_toggle_filters.setText(
+            "Nascondi filtri" if expanded else "Ricerca e filtri"
+        )
+        self.btn_toggle_filters.setToolTip(
+            "Chiudi il pannello, mantenendo la ricerca corrente"
+            if expanded else "Apri i filtri per ricerca, date e pagamenti"
+        )
+        if expanded:
+            self.search_edit.setFocus(QtCore.Qt.FocusReason.ShortcutFocusReason)
+
+    def _update_filter_summary(self) -> None:
+        """Mantiene leggibile la ricerca corrente anche a pannello chiuso."""
+        start, end = self._applied_scope
+        if start != end:
+            label = f"{start:%d/%m/%Y} – {end:%d/%m/%Y}"
+        elif start == date.today():
+            label = "Oggi"
+        else:
+            label = start.strftime("%d/%m/%Y")
+
+        count = 0
+        if self.filters.search_edit.text().strip():
+            count += 1
+        if self.filters.payment_combo.currentData():
+            count += 1
+        if self.filters.min_weight.value() > 0:
+            count += 1
+        if self.filters.max_weight.value() > 0:
+            count += 1
+        if count:
+            label += f" · {count} filtro" + ("i" if count != 1 else "")
+        self.filter_summary.setText(label)
+
     def _automatic_refresh(self) -> None:
         # La ricerca storica può coprire centinaia di giorni. Non scaricare
         # l'intero intervallo ogni tre secondi: serve il pulsante Cerca.
@@ -325,6 +389,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def _on_scope_changed(self) -> None:
         self.refresh_data(show_cursor=False, apply_scope=True)
+        self._update_filter_summary()
 
     def _apply_local_filters(self) -> None:
         self.proxy.set_search_text(self.filters.search_edit.text())
@@ -333,6 +398,7 @@ class MainWindow(QtWidgets.QMainWindow):
             self.filters.min_weight.value(), self.filters.max_weight.value()
         )
         self.update_total(self.model.all_rows())
+        self._update_filter_summary()
 
     def _change_theme(self, _index: int) -> None:
         """Applica il tema subito e salva la preferenza nell'area utente."""
@@ -449,6 +515,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 )
                 return
             self._applied_scope = proposed_scope
+            self._update_filter_summary()
 
         if self._busy or self._save_busy:
             # Se l'utente cambia periodo durante una richiesta, effettua
