@@ -73,6 +73,9 @@ jobs:
             "$env:ProgramFiles\Inno Setup 6\ISCC.exe"
           ) | Where-Object { Test-Path $_ } | Select-Object -First 1
           if (-not $iscc) { throw "Compilatore Inno Setup non trovato" }
+          # Il checkout e nella sottocartella app_frantoio; lo script
+          # si copia alla radice della workspace per risolvere i path dist/ e resources/.
+          Copy-Item "app_frantoio/AppFrantoio.iss" "AppFrantoio.iss" -Force
           & $iscc "AppFrantoio.iss"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           if (-not (Test-Path "dist/installer/Setup_App_Frantoio.exe")) {
