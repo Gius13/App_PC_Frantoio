@@ -37,6 +37,13 @@ class FakeFirebase:
         self.calls += 1
         return self.rows
 
+    def fetch_range(self, start_ms, end_ms):
+        self.calls += 1
+        return [
+            row for row in self.rows
+            if start_ms <= row["dataOra"] < end_ms
+        ]
+
 
 class RangeRepositoryTests(unittest.TestCase):
     def setUp(self):
