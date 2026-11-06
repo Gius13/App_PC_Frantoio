@@ -20,6 +20,8 @@ def main():
     retention_days = int(cfg.get("retention_days", 7))
     
     app = QtWidgets.QApplication(sys.argv)
+    # Aspetto omogeneo su macOS/Windows: evita il popup nativo squadrato.
+    app.setStyle("Fusion")
     apply_theme(cfg.get("theme", "light"))
     QtWidgets.QApplication.setWindowIcon(_app_icon())
 
