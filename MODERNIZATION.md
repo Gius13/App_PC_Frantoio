@@ -126,3 +126,52 @@ python -m app_frantoio.app
 Per verificare: alternare tra Chiaro e Scuro mentre si osservano la lista
 moliture, i report, i calendari e la finestra di modifica; chiudere e riaprire
 l'app e confermare che il tema selezionato venga mantenuto.
+
+
+## Nuova ricerca e interfaccia (6 novembre 2026)
+
+### Design
+
+- Riquadro di ricerca più ordinato, pulsanti compatti e spaziatura maggiore.
+- Combo box non native in stile Fusion, con angoli arrotondati e menu
+  di selezione coerenti nel tema scuro e nel tema chiaro.
+- Colori nero, antracite, grigi neutri e rosso come accento.
+- Calendario con **disegno diretto delle celle** (invece della sola
+  formattazione Qt): giorno selezionato rosso, oggi evidenziato,
+  altre date meno marcate, settimana da lunedì e mesi in italiano.
+
+### Ricerca per più giorni
+
+1. In **Moliture**, scegli **Periodo → Più giorni**.
+2. Seleziona **Dal** e **Al** nei nuovi calendari.
+3. Premi **Cerca nel periodo** per caricare il periodo.
+4. Scrivi un nome o altro testo, scegli il metodo di pagamento e,
+   facoltativamente, imposta il peso minimo e massimo. Questi filtri
+   agiscono immediatamente sui record già caricati.
+5. **Esporta Excel** esporta solo i record filtrati, con data e ora complete.
+6. **Azzera filtri** riporta alla vista giornaliera odierna.
+
+Intervallo supportato: massimo **367 giorni inclusivi**. Il caricamento
+periodico ogni 3 secondi rimane attivo in modalità **Un giorno**; per periodi
+ampi, la ricerca avviene invece su richiesta (pulsante Cerca/Aggiorna) per
+non sovraccaricare l'archivio.
+
+La ricerca combina una singola query SQLite indicizzata per le date
+storiche e una sola lettura Firebase per la finestra dei record recenti,
+mantenendo le rispettive sorgenti per la modifica dei record.
+
+### Collaudo Mac
+
+\`\`\`bash
+cd ~/Frantoio-Test/app_frantoio
+git pull --ff-only origin feature/modern-ui-record-editing
+cd ..
+source .venv/bin/activate
+python -m unittest discover -s app_frantoio/tests -v
+python -m app_frantoio.app
+\`\`\`
+
+Verificare in particolare: navigazione del calendario col mouse e da tastiera,
+scelta di un intervallo che attraversa il cambio di mese, filtri combinati,
+export e ritorno alla modalità giornaliera. Le fonti dati operative non sono
+modificate dalla sola ricerca; testare i salvataggi con dati di prova.
