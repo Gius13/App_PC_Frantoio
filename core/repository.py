@@ -25,21 +25,50 @@ class HybridRepository:
 
     # ------------------ Lista giorno (UI principale) ------------------
     def fetch_day(self, d: date) -> List[Dict[str, Any]]:
-        if self._is_in_firebase_window(d):
-            rows = self.fb.fetch()
-            out = []
-            for r in rows:
-                if in_day(r.get("dataOra"), d):
-                    rr = r.copy()
-                    rr["_source"] = "firebase"
-                    out.append(rr)
-            try:
-                out.sort(key=lambda r: int(float(r.get("dataOra") or 0)))
-            except Exception:
-                pass
-            return out
-        else:
-            return self.sql.fetch_day(d)
+        return self.fetch_range(d, d)
+
+    def fetch_range(self, from_date: date, to_date: date) -> List[Dict[str, Any]]:
+        """Ricerca un intervallo misto senza fare una richiesta per ogni giorno.
+
+        I giorni recenti provengono da Firebase (una sola richiesta), mentre
+        i giorni storici provengono da SQLite (una sola query indicizzata).
+        Le due sezioni non si sovrappongono.
+        """
+        if to_date < from_date:
+            raise ValueError("Intervallo non valido: la fine precede l'inizio.")
+        if (to_date - from_date).days > 366:
+            raise ValueError("Seleziona un periodo non superiore a 367 giorni.")
+
+        cutoff = datetime.now(TZ).date() - timedelta(days=self.hybrid_days)
+        rows: List[Dict[str, Any]] = []
+
+        if from_date < cutoff:
+            historical_to = min(to_date, cutoff - timedelta(days=1))
+            rows.extend(self.sql.fetch_range(from_date, historical_to))
+
+        if to_date >= cutoff:
+            online_from = max(from_date, cutoff)
+            start_ms = int(datetime(
+                online_from.year, online_from.month, online_from.day,
+                tzinfo=TZ,
+            ).timestamp() * 1000)
+            next_day = to_date + timedelta(days=1)
+            end_exclusive_ms = int(datetime(
+                next_day.year, next_day.month, next_day.day,
+                tzinfo=TZ,
+            ).timestamp() * 1000)
+            for r in self.fb.fetch():
+                try:
+                    timestamp = int(float(r.get("dataOra") or 0))
+                except (TypeError, ValueError, OverflowError):
+                    continue
+                if start_ms <= timestamp < end_exclusive_ms:
+                    item = r.copy()
+                    item["_source"] = "firebase"
+                    rows.append(item)
+
+        rows.sort(key=lambda row: (int(float(row.get("dataOra") or 0)), str(row.get("id") or "")))
+        return rows
 
     def update_record(self, original: Dict[str, Any], proposed: Dict[str, Any]) -> Dict[str, Any]:
         """Modifica il record nella fonte di origine, con validazione centrale.
