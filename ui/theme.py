@@ -84,7 +84,26 @@ QLabel#pageTitle, QLabel#dialogTitle {
     font-size: 23px;
     font-weight: 700;
 }
-QLabel#mutedLabel { color: $muted; }
+QLabel#mutedLabel, QLabel#brandSubtitle { color: $muted; }
+QLabel#brandTitle {
+    color: $accent;
+    font-size: 17px;
+    font-weight: 800;
+    letter-spacing: 1px;
+}
+QToolBar#appToolbar {
+    background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+        stop:0 $panel, stop:0.75 $panel, stop:1 $header);
+    border: none;
+    border-bottom: 2px solid $accent;
+    padding: 9px 18px;
+    spacing: 7px;
+}
+QToolBar#appToolbar::separator {
+    background: $border;
+    width: 1px;
+    margin: 5px;
+}
 QLabel#editSummary, QLabel#summaryCard {
     border: 1px solid $border;
     border-radius: 12px;
