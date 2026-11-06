@@ -378,7 +378,7 @@ class MainWindow(QtWidgets.QMainWindow):
         if self.filters.max_weight.value() > 0:
             count += 1
         if count:
-            label += f" · {count} filtro" + ("i" if count != 1 else "")
+            label += f" · {count} " + ("filtro" if count == 1 else "filtri")
         self.filter_summary.setText(label)
 
     def _automatic_refresh(self) -> None:
