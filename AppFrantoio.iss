@@ -2,7 +2,7 @@
 ; Esegue installazione/aggiornamento del binario senza gestire o eliminare
 ; config.json, database SQLite e file dell'utente.
 #define AppName "App Frantoio"
-#define AppVersion "0.2.0"
+#define AppVersion "0.2.1"
 #define AppExe "App_Frantoio.exe"
 
 [Setup]
@@ -39,7 +39,7 @@ Name: "italian"; MessagesFile: "compiler:Languages\Italian.isl"
 Name: "desktopicon"; Description: "Crea un collegamento sul desktop"; GroupDescription: "Collegamenti aggiuntivi:"; Flags: unchecked
 
 [Files]
-Source: "dist\App_Frantoio.exe"; DestDir: "{app}"; Flags: ignoreversion
+Source: "dist\App_Frantoio\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
 Name: "{autoprograms}\App Frantoio"; Filename: "{app}\{#AppExe}"; WorkingDir: "{app}"; IconFilename: "{app}\{#AppExe}"
