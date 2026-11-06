@@ -204,11 +204,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self.table.horizontalHeader().setStretchLastSection(True)
         vbox.addWidget(self.table)
 
-        self.table.setEditTriggers(
-            QtWidgets.QAbstractItemView.EditTrigger.DoubleClicked
-            | QtWidgets.QAbstractItemView.EditTrigger.SelectedClicked
-            | QtWidgets.QAbstractItemView.EditTrigger.EditKeyPressed
-        )
+        # Doppio clic apre sempre la finestra completa di modifica.
+        self.table.setEditTriggers(QtWidgets.QAbstractItemView.EditTrigger.NoEditTriggers)
 
         self.abbuono_delegate = AbbuonoDelegate(self.table)
         self.table.setItemDelegateForColumn(3, self.abbuono_delegate)
@@ -488,32 +485,27 @@ class MainWindow(QtWidgets.QMainWindow):
 
     # ---------------------- Azioni UI ----------------------
     def on_set_pagamento_clicked(self):
-        self.timer.stop()
-        try:
-            idxs = self.table.selectionModel().selectedRows()
-            if not idxs:
-                QtWidgets.QMessageBox.information(self, "Pagamento", "Seleziona una riga prima.")
-                return
-            idx = idxs[0]
-            row = self.model.row_at(self.proxy.mapToSource(idx).row())
-            pagamento = self.cmb_pagamento_quick.currentText()
-            rid = row.get("id")
-            if not rid:
-                raise ValueError("ID mancante")
-            source = row.get("_source", "firebase")
-            self.repo.update_pagamento(rid, pagamento, source)
-            row["pagamento"] = pagamento
-            self.model.dataChanged.emit(
-                self.model.index(self.proxy.mapToSource(idx).row(), 5),
-                self.model.index(self.proxy.mapToSource(idx).row(), 5),
-                [QtCore.Qt.ItemDataRole.DisplayRole],
-            )
-        except Exception as e:
-            QtWidgets.QMessageBox.warning(self, "Errore aggiornamento", f"{e}")
-        finally:
-            self.timer.start()
+        if self._busy or self._save_busy or self._sync_busy:
+            return
+        selected = self.table.selectionModel().selectedRows()
+        if not selected:
+            QtWidgets.QMessageBox.information(self, "Pagamento", "Seleziona una molitura.")
+            return
+        row = self.model.row_at(self.proxy.mapToSource(selected[0]).row())
+        rid = row.get("id")
+        if not rid:
+            QtWidgets.QMessageBox.warning(self, "Pagamento", "ID record mancante.")
+            return
+        payment = self.cmb_pagamento_quick.currentText()
+        source = row.get("_source", "firebase")
+        self._save_quick_change(
+            lambda: self.repo.update_pagamento(rid, payment, source),
+            f"Pagamento aggiornato: {payment or 'Da saldare'}"
+        )
 
     def on_delete_clicked(self):
+        if self._busy or self._save_busy or self._sync_busy:
+            return
         idxs = self.table.selectionModel().selectedRows()
         if not idxs:
             QtWidgets.QMessageBox.information(self, "Cancella", "Seleziona una riga prima.")
@@ -549,14 +541,20 @@ class MainWindow(QtWidgets.QMainWindow):
         if reply != QtWidgets.QMessageBox.StandardButton.Yes:
             return
 
-        try:
-            self.repo.delete_record(rid, source)
-        except Exception as e:
-            QtWidgets.QMessageBox.warning(self, "Errore cancellazione", str(e))
-            return
-
-        self.refresh_data(show_cursor=False)  # refresh “silenzioso” dopo cancellazione
-        self.statusBar().showMessage("Record cancellato.", 3000)
+        self._save_busy = True
+        worker = _FuncWorker(self.repo.delete_record, rid, source)
+        def done(_result):
+            self._save_busy = False
+            self.statusBar().showMessage("Record cancellato.", 4000)
+            self.refresh_data(show_cursor=False)
+            self.reports_page.refresh()
+        def failed(message):
+            self._save_busy = False
+            QtWidgets.QMessageBox.warning(self, "Errore cancellazione", message)
+            self.refresh_data(show_cursor=False)
+        worker.signals.done.connect(done)
+        worker.signals.error.connect(failed)
+        self._pool.start(worker)
 
     def on_model_changed(self, topLeft: QtCore.QModelIndex, bottomRight: QtCore.QModelIndex, roles):
         row = topLeft.row()
@@ -603,7 +601,7 @@ class MainWindow(QtWidgets.QMainWindow):
         )
 
     def _save_quick_change(self, action, success_message):
-        if self._save_busy:
+        if self._save_busy or self._sync_busy:
             return
         self._save_busy = True
         self.timer.stop()
