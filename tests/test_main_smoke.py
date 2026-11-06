@@ -52,6 +52,8 @@ class MainWindowSmokeTest(unittest.TestCase):
             # All'avvio la tabella occupa la pagina; le azioni restano visibili.
             self.assertTrue(w.filters.isHidden())
             self.assertFalse(w.btn_toggle_filters.isChecked())
+            self.assertTrue(w.date_edit.isVisible())
+            self.assertIs(w.date_edit.parentWidget(), w.tabs.widget(0))
             self.assertTrue(w.btn_refresh.isVisible())
             self.assertTrue(w.btn_export.isVisible())
             self.assertEqual(w.filter_summary.text(), "Oggi")
@@ -81,6 +83,15 @@ class MainWindowSmokeTest(unittest.TestCase):
             self.assertFalse(w.filters.isHidden())
             self.assertEqual(w.filters.search_edit.text(), "Mario")
             self.assertEqual(w.filters.payment_combo.currentData(), "__unpaid__")
+            # Un giorno scelto dalla barra resta utilizzabile anche a filtri chiusi.
+            w.btn_toggle_filters.click()
+            self.assertTrue(w.filters.isHidden())
+            chosen_date = QtCore.QDate.currentDate().addDays(-2)
+            w.date_edit.setDate(chosen_date)
+            self.app.processEvents()
+            self.assertTrue(w.filters.isHidden())
+            self.assertEqual(w._applied_scope[0], chosen_date.toPyDate())
+            self.assertEqual(w._applied_scope[1], chosen_date.toPyDate())
         finally:
             w.timer.stop()
             w.sync_timer.stop()
@@ -109,6 +120,14 @@ class MainWindowSmokeTest(unittest.TestCase):
             start, end = w.filters.scope()
             self.assertLess(start, end)
             self.assertEqual(w._applied_scope, (start, end))
+            # Anche partendo da una ricerca multi-giorno il calendario
+            # sempre visibile ripristina una singola data.
+            chosen = QtCore.QDate.currentDate().addDays(-3)
+            w.date_edit.setDate(chosen)
+            self.assertFalse(w.filters.is_range_mode())
+            self.assertEqual(w._applied_scope, (chosen.toPyDate(), chosen.toPyDate()))
+            # Il periodo resta nuovamente selezionabile.
+            w.filters.mode_combo.setCurrentIndex(1)
             # Esplicita una ricerca sul periodo.
             w.filters.searchRequested.emit()
             for _ in range(20):
