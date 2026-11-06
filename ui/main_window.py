@@ -750,13 +750,22 @@ class MainWindow(QtWidgets.QMainWindow):
 
     # ---------------------- Export Excel ----------------------
     def export_excel(self):
-        rows = self.model.all_rows()
+        # Esporta soltanto i risultati filtrati, non tutte le moliture
+        # della giornata/periodo caricato.
+        rows = [
+            self.model.row_at(self.proxy.mapToSource(self.proxy.index(i, 0)).row())
+            for i in range(self.proxy.rowCount())
+        ]
         if not rows:
-            QtWidgets.QMessageBox.information(self, "Export", "Nessun dato da esportare.")
+            QtWidgets.QMessageBox.information(self, "Export", "Nessun risultato da esportare.")
             return
 
-        d = self._selected_date()
-        sheet_name = d.strftime("%d.%m.%Y")
+        start_date, end_date = self._applied_scope
+        sheet_name = (
+            start_date.strftime("%d.%m.%Y")
+            if start_date == end_date
+            else f"{start_date:%d.%m}-{end_date:%d.%m.%Y}"
+        )
 
         df = pd.DataFrame(rows)
         if "name" not in df.columns and "nome" in df.columns:
@@ -764,14 +773,14 @@ class MainWindow(QtWidgets.QMainWindow):
         if "weight" not in df.columns and "peso" in df.columns:
             df["weight"] = df["peso"]
 
-        df["Ora"] = df.get("dataOra", "").apply(fmt_ts)
+        df["Data e ora"] = df["dataOra"].apply(fmt_date_time)
         df["abbuono"] = pd.to_numeric(df.get("abbuono", 0.0), errors="coerce").fillna(0.0)
         df["Prezzo (€)"] = pd.to_numeric(df["weight"], errors="coerce").fillna(0.0) * float(self.euro_per_kg)
 
-        cols = ["name", "weight", "Prezzo (€)", "abbuono", "Ora", "pagamento"]
+        cols = ["name", "weight", "Prezzo (€)", "abbuono", "Data e ora", "pagamento"]
         cols = [c for c in cols if c in df.columns]
         df = df[cols]
-        df.columns = ["Nome", "Peso (Kg)", "Prezzo (€)", "Abbuono (€)", "Ora", "Metodo di Pagamento"]
+        df.columns = ["Nome", "Peso (Kg)", "Prezzo (€)", "Abbuono (€)", "Data e ora", "Metodo di Pagamento"]
 
         if not self._export_path:
             path, _ = QtWidgets.QFileDialog.getSaveFileName(
