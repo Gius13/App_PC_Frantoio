@@ -35,6 +35,18 @@ class ThemeTests(unittest.TestCase):
             self.assertNotIn("#2463eb", css + cal)
             self.assertIn("qlineargradient", css)
 
+    def test_dropdown_arrows_are_packaged_and_visible_in_css(self):
+        from pathlib import Path
+        from app_frantoio.resources import resource_path
+        svg = Path(resource_path("dropdown_arrow.svg"))
+        self.assertTrue(svg.exists())
+        self.assertIn("stroke", svg.read_text(encoding="utf-8"))
+        css = theme_stylesheet("dark")
+        self.assertIn("QComboBox::down-arrow", css)
+        self.assertIn("QDateEdit::down-arrow", css)
+        self.assertIn("dropdown_arrow.svg", css)
+        self.assertNotIn("$arrow", css)
+
     def test_calendar_updates_in_place_on_theme_change(self):
         apply_theme("light")
         editor = QtWidgets.QDateEdit()
