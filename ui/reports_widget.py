@@ -100,6 +100,7 @@ class ReportsPage(QtWidgets.QWidget):
         self.lbl_abbuoni = QtWidgets.QLabel("Abbuoni: € 0.00")
         self.lbl_netto = QtWidgets.QLabel("Netto: € 0.00")
         for w in (self.lbl_kg, self.lbl_lordo, self.lbl_abbuoni, self.lbl_netto):
+            w.setObjectName("summaryCard")
             w.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
             w.setMinimumWidth(160)
             summary.addWidget(w)
