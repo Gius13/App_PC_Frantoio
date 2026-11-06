@@ -8,7 +8,9 @@ from typing import TYPE_CHECKING, Optional, Callable
 
 from app_frantoio.resources import resource_path
 from app_frantoio.models.moliture_model import MolitureModel
-from app_frantoio.util.time_utils import fmt_ts
+from app_frantoio.models.filter_proxy import MolitureFilterProxy
+from app_frantoio.ui.search_panel import MolitureSearchPanel
+from app_frantoio.util.time_utils import fmt_ts, fmt_date_time
 from app_frantoio.ui.reports_widget import ReportsPage
 from app_frantoio.ui.edit_record_dialog import EditRecordDialog
 from app_frantoio.ui.theme import apply_theme, normalize_theme
@@ -157,6 +159,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._last_selected_id: Optional[str] = None
         self._sel_serial: int = 0  # aumenta ad ogni cambio selezione
         self._updating_table = False
+        self._refresh_pending = False
 
         self.setWindowTitle("Frantoio | Gestione moliture")
         self._theme = apply_theme(normalize_theme(self.cfg.get("theme", "light")))
@@ -206,31 +209,18 @@ class MainWindow(QtWidgets.QMainWindow):
         heading.setObjectName("pageTitle")
         vbox.addWidget(heading)
 
-        controls = QtWidgets.QHBoxLayout()
-        controls.addWidget(QtWidgets.QLabel("Data:"))
-        self.date_edit = QtWidgets.QDateEdit(calendarPopup=True)
-        configure_calendar(self.date_edit)
-        self.date_edit.setDate(QtCore.QDate.currentDate())
-        self.date_edit.setDisplayFormat("dd/MM/yyyy")
-        controls.addWidget(self.date_edit)
-        controls.addStretch(1)
-        self.search_edit = QtWidgets.QLineEdit()
-        self.search_edit.setPlaceholderText("Cerca cliente, pagamento o peso...")
-        self.search_edit.setClearButtonEnabled(True)
-        controls.addWidget(self.search_edit, 1)
-        self.btn_refresh = QtWidgets.QPushButton("Aggiorna")
-        self.btn_export = QtWidgets.QPushButton("Export Excel")
-        controls.addWidget(self.btn_refresh)
-        controls.addWidget(self.btn_export)
-        vbox.addLayout(controls)
+        self.filters = MolitureSearchPanel(self)
+        vbox.addWidget(self.filters)
+        self.date_edit = self.filters.date_edit
+        self.search_edit = self.filters.search_edit
+        self.btn_refresh = self.filters.btn_refresh
+        self.btn_export = self.filters.btn_export
+        self._applied_scope = self.filters.scope()
 
         self.table = QtWidgets.QTableView()
         self.model = MolitureModel([], self.euro_per_kg, self)
-        self.proxy = QtCore.QSortFilterProxyModel(self)
+        self.proxy = MolitureFilterProxy(self)
         self.proxy.setSourceModel(self.model)
-        self.proxy.setFilterCaseSensitivity(QtCore.Qt.CaseSensitivity.CaseInsensitive)
-        self.proxy.setFilterKeyColumn(-1)
-        self.proxy.setSortRole(QtCore.Qt.ItemDataRole.UserRole)
         self.table.setModel(self.proxy)
         self.table.setAlternatingRowColors(True)
         self.table.setSortingEnabled(True)
@@ -290,7 +280,7 @@ class MainWindow(QtWidgets.QMainWindow):
         # Timer refresh tabella (auto): NON mostra cursore
         self.timer = QtCore.QTimer(self)
         self.timer.setInterval(self.poll_ms)
-        self.timer.timeout.connect(lambda: self.refresh_data(show_cursor=False))
+        self.timer.timeout.connect(self._automatic_refresh)
 
         # Timer mirror (senza cleanup)
         self.sync_timer = QtCore.QTimer(self)
@@ -299,13 +289,15 @@ class MainWindow(QtWidgets.QMainWindow):
         self.sync_timer.timeout.connect(self.auto_sync)
 
         # Signals
-        # Non disabilitare il selettore mentre si chiude il popup calendario.
-        self.date_edit.dateChanged.connect(lambda _date: self.refresh_data(show_cursor=False))
-        self.btn_refresh.clicked.connect(lambda _checked=False: self.refresh_data(show_cursor=True))
+        # Le modifiche a periodo e filtri sono gestite dal pannello ricerca.
+        self.filters.scopeChanged.connect(self._on_scope_changed)
+        self.filters.searchRequested.connect(
+            lambda: self.refresh_data(show_cursor=True, apply_scope=True)
+        )
+        self.filters.filtersChanged.connect(self._apply_local_filters)
         self.btn_export.clicked.connect(self.export_excel)
         self.btn_edit_row.clicked.connect(self.on_edit_clicked)
         self.table.doubleClicked.connect(self.on_edit_clicked)
-        self.search_edit.textChanged.connect(self.proxy.setFilterFixedString)
         self.theme_switch.currentIndexChanged.connect(self._change_theme)
         self.btn_set_pagamento.clicked.connect(self.on_set_pagamento_clicked)
         self.btn_delete_row.clicked.connect(self.on_delete_clicked)
@@ -315,6 +307,23 @@ class MainWindow(QtWidgets.QMainWindow):
         QtCore.QTimer.singleShot(1000, self.auto_sync)
         self.timer.start()
         self.sync_timer.start()
+
+    def _automatic_refresh(self) -> None:
+        # La ricerca storica può coprire centinaia di giorni. Non scaricare
+        # l'intero intervallo ogni tre secondi: serve il pulsante Cerca.
+        if not self.filters.is_range_mode():
+            self.refresh_data(show_cursor=False)
+
+    def _on_scope_changed(self) -> None:
+        self.refresh_data(show_cursor=False, apply_scope=True)
+
+    def _apply_local_filters(self) -> None:
+        self.proxy.set_search_text(self.filters.search_edit.text())
+        self.proxy.set_payment(self.filters.payment_combo.currentData() or "")
+        self.proxy.set_weight_bounds(
+            self.filters.min_weight.value(), self.filters.max_weight.value()
+        )
+        self.update_total(self.model.all_rows())
 
     def _change_theme(self, _index: int) -> None:
         """Applica il tema subito e salva la preferenza nell'area utente."""
@@ -419,43 +428,66 @@ class MainWindow(QtWidgets.QMainWindow):
                 self.timer.start()
 
     # ---------------------- Refresh (in background) ----------------------
-    def refresh_data(self, show_cursor: bool = True):
+    def refresh_data(self, show_cursor: bool = True, apply_scope: bool = False):
         if self.table.state() == QtWidgets.QAbstractItemView.State.EditingState:
             return
+        if apply_scope:
+            proposed_scope = self.filters.scope()
+            if (proposed_scope[1] - proposed_scope[0]).days > 366:
+                QtWidgets.QMessageBox.warning(
+                    self, "Intervallo troppo ampio",
+                    "Seleziona un intervallo massimo di 367 giorni."
+                )
+                return
+            self._applied_scope = proposed_scope
+
         if self._busy or self._save_busy:
+            # Se l'utente cambia periodo durante una richiesta, effettua
+            # la nuova ricerca alla sua conclusione; mai mostrare dati vecchi.
+            if apply_scope:
+                self._refresh_pending = True
             return
 
-        requested_date = self._selected_date()
+        requested_scope = self._applied_scope
         selection_at_start = self._current_selected_id()
         serial_at_start = self._sel_serial
 
         if show_cursor:
             self._set_busy(True)
         else:
-            # Il polling non deve disabilitare la tabella o rubare il focus.
             self._busy = True
 
-        worker = _FuncWorker(self.repo.fetch_day, requested_date)
+        worker = _FuncWorker(self.repo.fetch_range, *requested_scope)
         worker.signals.done.connect(
             lambda rows: self._on_refresh_done(
-                rows, requested_date, selection_at_start, serial_at_start, show_cursor
+                rows, requested_scope, selection_at_start,
+                serial_at_start, show_cursor
             )
         )
         worker.signals.error.connect(
-            lambda msg: self._on_refresh_error(msg, requested_date, show_cursor)
+            lambda msg: self._on_refresh_error(msg, requested_scope, show_cursor)
         )
         self._pool.start(worker)
 
-    def _on_refresh_done(self, rows, requested_date: date,
+    def _finish_refresh(self, show_cursor: bool):
+        if show_cursor:
+            self._set_busy(False)
+        else:
+            self._busy = False
+        if self._refresh_pending:
+            self._refresh_pending = False
+            QtCore.QTimer.singleShot(
+                0, lambda: self.refresh_data(show_cursor=False)
+            )
+
+    def _on_refresh_done(self, rows, requested_scope: tuple[date, date],
                          selection_at_start: Optional[str],
                          serial_at_start: int, show_cursor: bool):
-        retry_date = requested_date != self._selected_date()
         try:
-            if retry_date:
-                return  # un vecchio fetch non può sostituire i dati del nuovo giorno
+            if requested_scope != self._applied_scope:
+                self._refresh_pending = True
+                return
 
-            # Salva lo stato IMMEDIATAMENTE prima di aggiornare i dati: durante
-            # la richiesta in background l'utente può continuare a scorrere.
             vbar = self.table.verticalScrollBar()
             hbar = self.table.horizontalScrollBar()
             vpos, hpos = vbar.value(), hbar.value()
@@ -467,56 +499,43 @@ class MainWindow(QtWidgets.QMainWindow):
 
             rows_list = list(rows or [])
             rows_list.sort(key=lambda row: int(float(row.get("dataOra") or 0)))
-
             self._updating_table = True
             try:
                 changed = self.model.set_rows(rows_list)
                 if changed:
-                    # Niente reset del modello su polling normale. Se nuovi
-                    # record vengono aggiunti, ripristiniamo esattamente lo
-                    # scroll e solo se necessario la selezione tramite ID.
                     self._reselect_by_id(target)
                     vbar.setValue(min(vpos, vbar.maximum()))
                     hbar.setValue(min(hpos, hbar.maximum()))
                 self._last_selected_id = self._current_selected_id()
             finally:
                 self._updating_table = False
-
             self.update_total(rows_list)
         finally:
-            if show_cursor:
-                self._set_busy(False)
-            else:
-                self._busy = False
-            if retry_date:
-                QtCore.QTimer.singleShot(
-                    0, lambda: self.refresh_data(show_cursor=False)
-                )
+            self._finish_refresh(show_cursor)
 
-    def _on_refresh_error(self, msg: str, requested_date: date,
-                          show_cursor: bool):
+    def _on_refresh_error(self, msg: str,
+                          requested_scope: tuple[date, date], show_cursor: bool):
+        self._finish_refresh(show_cursor)
+        if requested_scope != self._applied_scope:
+            return
         if show_cursor:
-            self._set_busy(False)
+            QtWidgets.QMessageBox.warning(self, "Ricerca moliture", f"Errore: {msg}")
         else:
-            self._busy = False
-        if requested_date != self._selected_date():
-            QtCore.QTimer.singleShot(
-                0, lambda: self.refresh_data(show_cursor=False)
-            )
-        elif show_cursor:
-            QtWidgets.QMessageBox.warning(self, "Lettura dati", f"Errore: {msg}")
-        else:
-            # Le disconnessioni temporanee non devono aprire una finestra ogni 3 s.
-            self.statusBar().showMessage(f"Sincronizzazione dati: {msg}", 5000)
+            self.statusBar().showMessage(f"Impossibile aggiornare: {msg}", 6000)
 
     def update_total(self, rows):
         total_kg = 0.0
-        for r in rows:
+        visible = self.proxy.rowCount()
+        for i in range(visible):
+            idx = self.proxy.mapToSource(self.proxy.index(i, 0))
+            r = self.model.row_at(idx.row())
             try:
                 total_kg += float(r.get("weight") or r.get("peso") or 0)
-            except Exception:
+            except (TypeError, ValueError):
                 pass
-        self.lbl_tot.setText(f"Totale kg: {total_kg:.2f}")
+        self.lbl_tot.setText(
+            f"{visible} di {len(rows)} moliture  ·  {total_kg:,.2f} kg nei risultati"
+        )
 
     # ---------------------- Auto-sync (mirror in background) ----------------------
     def auto_sync(self):
