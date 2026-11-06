@@ -36,6 +36,56 @@ class MainWindowSmokeTest(unittest.TestCase):
         cls.app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
         cls.app.setStyle("Fusion")
 
+    def test_filters_start_collapsed_and_keep_criteria_when_closed(self):
+        repo = FakeRepository()
+        w = MainWindow(
+            {"theme": "dark", "euro_per_kg": 0.16,
+             "poll_ms": 300000, "mirror_interval_minutes": 9999},
+            repo,
+        )
+        try:
+            w.timer.stop()
+            w.sync_timer.stop()
+            w.show()
+            self.app.processEvents()
+
+            # All'avvio la tabella occupa la pagina; le azioni restano visibili.
+            self.assertTrue(w.filters.isHidden())
+            self.assertFalse(w.btn_toggle_filters.isChecked())
+            self.assertTrue(w.btn_refresh.isVisible())
+            self.assertTrue(w.btn_export.isVisible())
+            self.assertEqual(w.filter_summary.text(), "Oggi")
+
+            w.btn_toggle_filters.click()
+            self.assertFalse(w.filters.isHidden())
+            self.assertTrue(w.btn_toggle_filters.isChecked())
+
+            # Filtra: la chiusura deve soltanto nascondere il pannello.
+            w.filters.search_edit.setText("Mario")
+            w.filters.payment_combo.setCurrentIndex(1)
+            self.assertIn("2 filtri", w.filter_summary.text())
+            self.assertEqual(w.proxy._query, "mario")
+            self.assertEqual(w.proxy._payment, "__unpaid__")
+
+            w.btn_toggle_filters.click()
+            self.assertTrue(w.filters.isHidden())
+            self.assertFalse(w.btn_toggle_filters.isChecked())
+            self.assertTrue(w.btn_refresh.isVisible())
+            self.assertIn("2 filtri", w.filter_summary.text())
+            self.assertEqual(w.filters.search_edit.text(), "Mario")
+            self.assertEqual(w.filters.payment_combo.currentData(), "__unpaid__")
+            self.assertEqual(w.proxy._query, "mario")
+
+            # Riaprendo, tutti i campi mantengono i valori già selezionati.
+            w.btn_toggle_filters.click()
+            self.assertFalse(w.filters.isHidden())
+            self.assertEqual(w.filters.search_edit.text(), "Mario")
+            self.assertEqual(w.filters.payment_combo.currentData(), "__unpaid__")
+        finally:
+            w.timer.stop()
+            w.sync_timer.stop()
+            w.close()
+
     def test_window_assembles_and_range_controls_work(self):
         repo = FakeRepository()
         w = MainWindow(
