@@ -3,6 +3,7 @@ from typing import Any, Dict, List, Tuple
 from app_frantoio.util.time_utils import TZ, in_day
 from app_frantoio.core.fb_client import FirebaseRestClient
 from app_frantoio.core.sqlite_client import SQLiteClient
+from app_frantoio.core.record_validation import validate_record_changes
 
 
 class HybridRepository:
@@ -40,6 +41,30 @@ class HybridRepository:
         else:
             return self.sql.fetch_day(d)
 
+    def update_record(self, original: Dict[str, Any], proposed: Dict[str, Any]) -> Dict[str, Any]:
+        """Modifica il record nella fonte di origine, con validazione centrale.
+
+        Firebase viene scritto per primo; una copia locale esistente viene
+        aggiornata per i report, senza creare righe fittizie.
+        """
+        rid = original.get("id")
+        source = original.get("_source")
+        if not rid or source not in ("firebase", "sqlite"):
+            raise ValueError("Record privo di ID o sorgente riconosciuta.")
+        changes = validate_record_changes(original, proposed)
+        if not changes:
+            return {}
+        if source == "firebase":
+            self.fb.update_fields(rid, changes)
+            try:
+                self.sql.update_fields(rid, changes)
+            except LookupError:
+                # Può non essere ancora arrivato il primo mirror.
+                pass
+        else:
+            self.sql.update_fields(rid, changes, local_override=True)
+        return changes
+
     def update_pagamento(self, rid: str, pagamento: str, source: str):
         if source == "firebase":
             return self.fb.update_pagamento(rid, pagamento)
@@ -60,7 +85,9 @@ class HybridRepository:
         if not rid:
             raise ValueError("ID mancante")
         if source == "firebase":
-            return self.fb.delete_one(rid)
+            self.fb.delete_one(rid)
+            self.sql.delete_one(rid)
+            return
         elif source == "sqlite":
             return self.sql.delete_one(rid)
         else:
