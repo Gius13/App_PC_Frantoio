@@ -207,6 +207,9 @@ class MainWindow(QtWidgets.QMainWindow):
         vbox.setContentsMargins(22, 18, 22, 18)
         vbox.setSpacing(16)
 
+        # Il calendario del singolo giorno rimane sempre visibile.
+        self.filters = MolitureSearchPanel(self)
+
         # Barra compatta: le azioni quotidiane restano visibili, i filtri no.
         table_toolbar = QtWidgets.QHBoxLayout()
         table_toolbar.setSpacing(10)
@@ -214,6 +217,10 @@ class MainWindow(QtWidgets.QMainWindow):
         heading.setObjectName("pageTitle")
         table_toolbar.addWidget(heading)
         table_toolbar.addStretch(1)
+
+        self.day_picker_label = QtWidgets.QLabel("Giorno:")
+        table_toolbar.addWidget(self.day_picker_label)
+        table_toolbar.addWidget(self.filters.date_edit)
 
         self.filter_summary = QtWidgets.QLabel("Oggi")
         self.filter_summary.setObjectName("filterSummary")
@@ -235,7 +242,6 @@ class MainWindow(QtWidgets.QMainWindow):
         table_toolbar.addWidget(self.btn_export)
         vbox.addLayout(table_toolbar)
 
-        self.filters = MolitureSearchPanel(self)
         vbox.addWidget(self.filters)
         self.date_edit = self.filters.date_edit
         self.search_edit = self.filters.search_edit
@@ -483,7 +489,7 @@ class MainWindow(QtWidgets.QMainWindow):
         widgets = [
             self.btn_refresh, self.btn_export,
             self.btn_set_pagamento, self.btn_delete_row, self.btn_edit_row,
-            self.date_edit, self.table
+            self.table
         ]
         for w in widgets:
             w.setEnabled(not busy)
