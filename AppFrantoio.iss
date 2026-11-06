@@ -2,7 +2,7 @@
 ; Esegue installazione/aggiornamento del binario senza gestire o eliminare
 ; config.json, database SQLite e file dell'utente.
 #define AppName "App Frantoio"
-#define AppVersion "0.2.1"
+#define AppVersion "0.2.2"
 #define AppExe "App_Frantoio.exe"
 
 [Setup]
