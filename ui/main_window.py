@@ -11,7 +11,8 @@ from app_frantoio.models.moliture_model import MolitureModel
 from app_frantoio.util.time_utils import fmt_ts
 from app_frantoio.ui.reports_widget import ReportsPage
 from app_frantoio.ui.edit_record_dialog import EditRecordDialog
-from app_frantoio.ui.theme import MODERN_STYLESHEET
+from app_frantoio.ui.theme import apply_theme, normalize_theme
+from app_frantoio.util.config import save_config
 from app_frantoio.ui.calendar import configure_calendar
 
 if TYPE_CHECKING:
@@ -158,7 +159,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._updating_table = False
 
         self.setWindowTitle("Frantoio | Gestione moliture")
-        self.setStyleSheet(MODERN_STYLESHEET)
+        self._theme = apply_theme(normalize_theme(self.cfg.get("theme", "light")))
         self.resize(1200, 700)
         self.setWindowIcon(_app_icon())
 
@@ -189,6 +190,18 @@ class MainWindow(QtWidgets.QMainWindow):
         self.btn_export = QtWidgets.QPushButton("Export Excel")
         controls.addWidget(self.btn_refresh)
         controls.addWidget(self.btn_export)
+
+        controls.addSpacing(12)
+        self.theme_label = QtWidgets.QLabel("Tema:")
+        controls.addWidget(self.theme_label)
+        self.theme_switch = QtWidgets.QComboBox()
+        self.theme_switch.setObjectName("themeSwitch")
+        self.theme_switch.setAccessibleName("Selezione tema dell'applicazione")
+        self.theme_switch.addItem("Chiaro", "light")
+        self.theme_switch.addItem("Scuro", "dark")
+        self.theme_switch.setCurrentIndex(1 if self._theme == "dark" else 0)
+        self.theme_switch.setToolTip("Cambia aspetto. La scelta viene salvata per i prossimi avvii.")
+        controls.addWidget(self.theme_switch)
         vbox.addLayout(controls)
 
         self.table = QtWidgets.QTableView()
@@ -273,6 +286,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.btn_edit_row.clicked.connect(self.on_edit_clicked)
         self.table.doubleClicked.connect(self.on_edit_clicked)
         self.search_edit.textChanged.connect(self.proxy.setFilterFixedString)
+        self.theme_switch.currentIndexChanged.connect(self._change_theme)
         self.btn_set_pagamento.clicked.connect(self.on_set_pagamento_clicked)
         self.btn_delete_row.clicked.connect(self.on_delete_clicked)
 
@@ -281,6 +295,26 @@ class MainWindow(QtWidgets.QMainWindow):
         QtCore.QTimer.singleShot(1000, self.auto_sync)
         self.timer.start()
         self.sync_timer.start()
+
+    def _change_theme(self, _index: int) -> None:
+        """Applica il tema subito e salva la preferenza nell'area utente."""
+        requested = normalize_theme(self.theme_switch.currentData())
+        if requested == self._theme:
+            return
+        self._theme = apply_theme(requested)
+        self.cfg["theme"] = self._theme
+        try:
+            save_config(self.cfg)
+        except OSError as exc:
+            self.statusBar().showMessage(
+                f"Tema attivato, ma non è stato possibile salvare la preferenza: {exc}",
+                7000,
+            )
+        else:
+            self.statusBar().showMessage(
+                "Tema scuro attivato." if requested == "dark" else "Tema chiaro attivato.",
+                3000,
+            )
 
     # ---------------------- Helpers selezione ----------------------
     def _on_selection_changed(self, selected: QtCore.QItemSelection, deselected: QtCore.QItemSelection):
