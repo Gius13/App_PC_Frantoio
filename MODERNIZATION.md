@@ -195,3 +195,44 @@ pulsanti **Ricerca e filtri**, **Aggiorna** ed **Esporta Excel**.
 **Test manuale:** tenere i filtri chiusi, cambiare data dalla barra superiore,
 verificare i record; riaprire i filtri, impostare Più giorni, richiudere e
 scegliere una nuova data dalla barra.
+
+
+## Correzione Firebase HTTP 401 — sessione scaduta
+
+Nel codice precedente il login otteneva \`idToken\` e \`refreshToken\` ma,
+dopo l'accesso iniziale, continuava a usare l'ID token senza rinnovarlo.
+Firebase ID token ha una scadenza e può causare errori **HTTP 401**.
+
+### Nuovo comportamento
+
+- \`core/auth.py\` tiene traccia della scadenza e rinnova il token
+  automaticamente **prima** che scada, usando l'endpoint ufficiale
+  \`https://securetoken.googleapis.com/v1/token\`.
+- I worker concorrenti condividono lo stesso \`AuthClient\` protetto
+  da un lock; i rinnovi simultanei vengono deduplicati.
+- \`core/fb_client.py\` usa il token valido in tutte le richieste;
+  in caso di HTTP 401, ne forza il rinnovo ed esegue **un solo retry**.
+- I messaggi d'errore non includono più URL con il parametro \`auth\`
+  (che contiene il Firebase ID token) né il refresh token.
+- Se il refresh token è revocato o il login non è più valido, occorre
+  **chiudere e riaprire l'applicazione ed effettuare un nuovo login**.
+- Un errore 401 persistente dopo il refresh può dipendere dalle
+  **Realtime Database Security Rules**, da credenziali non valide
+  o da altri problemi di autorizzazione: non viene nascosto.
+
+### Collaudo
+
+\`\`\`bash
+cd ~/Frantoio-Test/app_frantoio
+git pull --ff-only origin feature/modern-ui-record-editing
+cd ..
+source .venv/bin/activate
+python -m unittest discover -s app_frantoio/tests -v
+python -m app_frantoio.app
+\`\`\`
+
+Provare a mantenere l'app aperta oltre un'ora, verificando che
+le letture automatiche continuino senza richiedere un secondo login.
+La suite automatica simula la scadenza, due 401 consecutivi, la
+rotazione del refresh token e l'accesso di più thread senza usare
+credenziali o database reali.
