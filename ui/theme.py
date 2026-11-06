@@ -270,6 +270,28 @@ QMenu {
 QMenu::item:selected { background: $accent_soft; }
 
 /* Layout più arioso e contemporaneo; rosso solo per accenti e azioni. */
+QLabel#filterSummary {
+    color: $muted;
+    background: transparent;
+    font-size: 12px;
+    font-weight: 600;
+    padding: 4px 8px;
+}
+QPushButton#filterToggleButton {
+    color: $accent;
+    background: $accent_soft;
+    border: 1px solid $border;
+    border-radius: 13px;
+    min-height: 28px;
+    padding: 7px 16px;
+    font-weight: 700;
+}
+QPushButton#filterToggleButton:hover,
+QPushButton#filterToggleButton:checked {
+    color: $selected_text;
+    background: $accent;
+    border-color: $accent;
+}
 QLabel#sectionEyebrow {
     color: $accent;
     font-size: 10px;
