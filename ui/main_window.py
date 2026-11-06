@@ -149,11 +149,12 @@ class MainWindow(QtWidgets.QMainWindow):
         self.cfg = cfg
         self.repo = repo
         self.euro_per_kg = float(cfg.get("euro_per_kg", 0.30))
-        self.poll_ms = int(cfg.get("poll_ms", 3000))
+        self.poll_ms = max(1000, min(2000, int(cfg.get("poll_ms", 2000))))
         self._export_path = None
         self._busy = False  # fix cursore/ri-entrance
         self._sync_busy = False
         self._save_busy = False
+        self._edit_open = False
 
         # tracking selezione per evitare "rimbalzi" dopo refresh
         self._last_selected_id: Optional[str] = None
@@ -265,10 +266,10 @@ class MainWindow(QtWidgets.QMainWindow):
         header = self.table.horizontalHeader()
         # Il nome si adatta automaticamente al contenuto, anche dopo l'arrivo
         # di nuovi record; le altre colonne conservano larghezze indipendenti.
-        header.setSectionResizeMode(
-            0, QtWidgets.QHeaderView.ResizeMode.ResizeToContents
-        )
+        # La scansione Qt di tutte le celle ad ogni refresh era lenta su Windows.
+        header.setSectionResizeMode(0, QtWidgets.QHeaderView.ResizeMode.Interactive)
         header.setStretchLastSection(True)
+        self.table.setColumnWidth(0, 230)
         vbox.addWidget(self.table)
 
         # Doppio clic apre sempre la finestra completa di modifica.
@@ -347,7 +348,8 @@ class MainWindow(QtWidgets.QMainWindow):
 
         # Avvio
         QtCore.QTimer.singleShot(200, self.refresh_data)              # primo load (show_cursor=True)
-        QtCore.QTimer.singleShot(1000, self.auto_sync)
+        # Il mirror completo non deve rallentare il primo caricamento.
+        QtCore.QTimer.singleShot(15000, self.auto_sync)
         self.timer.start()
         self.sync_timer.start()
 
@@ -390,7 +392,7 @@ class MainWindow(QtWidgets.QMainWindow):
     def _automatic_refresh(self) -> None:
         # La ricerca storica può coprire centinaia di giorni. Non scaricare
         # l'intero intervallo ogni tre secondi: serve il pulsante Cerca.
-        if not self.filters.is_range_mode():
+        if not self.filters.is_range_mode() and not self._edit_open:
             self.refresh_data(show_cursor=False)
 
     def _on_scope_changed(self) -> None:
@@ -481,32 +483,21 @@ class MainWindow(QtWidgets.QMainWindow):
 
     # ---------------------- Busy UI / Cursor fix ----------------------
     def _set_busy(self, busy: bool):
-        if busy == getattr(self, "_busy", False):
-            return  # nessun cambio di stato
-
+        """Il polling non deve disabilitare tabella e pulsante Modifica."""
         self._busy = busy
-
-        widgets = [
-            self.btn_refresh, self.btn_export,
-            self.btn_set_pagamento, self.btn_delete_row, self.btn_edit_row,
-            self.table
-        ]
-        for w in widgets:
-            w.setEnabled(not busy)
-
+        self.btn_refresh.setEnabled(not busy)
         if busy:
-            if self.timer.isActive():
-                self.timer.stop()
-            QtGui.QGuiApplication.setOverrideCursor(QtCore.Qt.CursorShape.WaitCursor)
-        else:
-            # svuota TUTTI gli override residui
-            try:
-                while QtGui.QGuiApplication.overrideCursor() is not None:
-                    QtGui.QGuiApplication.restoreOverrideCursor()
-            except Exception:
-                pass
-            if not self.timer.isActive():
-                self.timer.start()
+            self.statusBar().showMessage("Aggiornamento moliture...", 3000)
+
+    def _resize_name_column(self, rows):
+        """Una scansione leggera dei nomi, senza ResizeToContents Qt."""
+        fm = self.table.fontMetrics()
+        width = max(230, max(
+            (fm.horizontalAdvance(str(row.get("name") or row.get("nome") or ""))
+             for row in rows),
+            default=0,
+        ) + 46)
+        self.table.setColumnWidth(0, min(width, 520))
 
     # ---------------------- Refresh (in background) ----------------------
     def refresh_data(self, show_cursor: bool = True, apply_scope: bool = False):
@@ -523,10 +514,10 @@ class MainWindow(QtWidgets.QMainWindow):
             self._applied_scope = proposed_scope
             self._update_filter_summary()
 
-        if self._busy or self._save_busy:
+        if self._busy or self._save_busy or self._edit_open:
             # Se l'utente cambia periodo durante una richiesta, effettua
             # la nuova ricerca alla sua conclusione; mai mostrare dati vecchi.
-            if apply_scope:
+            if apply_scope or show_cursor:
                 self._refresh_pending = True
             return
 
@@ -556,7 +547,7 @@ class MainWindow(QtWidgets.QMainWindow):
             self._set_busy(False)
         else:
             self._busy = False
-        if self._refresh_pending:
+        if self._refresh_pending and not self._edit_open and not self._save_busy:
             self._refresh_pending = False
             QtCore.QTimer.singleShot(
                 0, lambda: self.refresh_data(show_cursor=False)
@@ -566,7 +557,7 @@ class MainWindow(QtWidgets.QMainWindow):
                          selection_at_start: Optional[str],
                          serial_at_start: int, show_cursor: bool):
         try:
-            if requested_scope != self._applied_scope:
+            if requested_scope != self._applied_scope or self._edit_open:
                 self._refresh_pending = True
                 return
 
@@ -585,6 +576,7 @@ class MainWindow(QtWidgets.QMainWindow):
             try:
                 changed = self.model.set_rows(rows_list)
                 if changed:
+                    self._resize_name_column(rows_list)
                     self._reselect_by_id(target)
                     vbar.setValue(min(vpos, vbar.maximum()))
                     hbar.setValue(min(hpos, hbar.maximum()))
@@ -640,19 +632,28 @@ class MainWindow(QtWidgets.QMainWindow):
         self._pool.start(worker)
 
     def on_edit_clicked(self, *args):
-        if self._save_busy or self._busy or self._sync_busy:
+        # Letture e sincronizzazioni Firebase non bloccano l'editor.
+        if self._save_busy or self._edit_open:
             return
         selected = self.table.selectionModel().selectedRows()
-        if not selected:
-            QtWidgets.QMessageBox.information(self, "Modifica", "Seleziona una molitura.")
+        view_index = selected[0] if selected else self.table.currentIndex()
+        if (not view_index.isValid() and args
+                and isinstance(args[0], QtCore.QModelIndex)):
+            view_index = args[0]
+        if not view_index.isValid():
+            QtWidgets.QMessageBox.information(
+                self, "Modifica", "Seleziona una molitura."
+            )
             return
-        source_index = self.proxy.mapToSource(selected[0])
+        source_index = self.proxy.mapToSource(view_index)
         if not source_index.isValid():
             return
+
         original = self.model.row_at(source_index.row()).copy()
+        self._edit_open = True
         self.timer.stop()
-        dlg = EditRecordDialog(original, self.euro_per_kg, self)
         try:
+            dlg = EditRecordDialog(original, self.euro_per_kg, self)
             if dlg.exec() != QtWidgets.QDialog.DialogCode.Accepted:
                 return
             changes = dlg.changed_fields()
@@ -663,18 +664,31 @@ class MainWindow(QtWidgets.QMainWindow):
             self.btn_edit_row.setEnabled(False)
             self.statusBar().showMessage("Salvataggio modifiche in corso...")
             worker = _FuncWorker(self.repo.update_record, original, changes)
-            worker.signals.done.connect(lambda result: self._on_record_saved(result))
-            worker.signals.error.connect(lambda msg: self._on_record_save_failed(msg))
+            worker.signals.done.connect(self._on_record_saved)
+            worker.signals.error.connect(self._on_record_save_failed)
             self._pool.start(worker)
+        except Exception as exc:
+            QtWidgets.QMessageBox.warning(
+                self, "Modifica non disponibile",
+                f"Impossibile aprire la finestra di modifica: {exc}"
+            )
         finally:
-            if not self._save_busy and not self.timer.isActive():
-                self.timer.start()
+            self._edit_open = False
+            if not self._save_busy:
+                if not self.timer.isActive():
+                    self.timer.start()
+                if self._refresh_pending and not self._busy:
+                    self._refresh_pending = False
+                    QtCore.QTimer.singleShot(
+                        0, lambda: self.refresh_data(show_cursor=False)
+                    )
 
     def _on_record_saved(self, changes):
         self._save_busy = False
         self.btn_edit_row.setEnabled(True)
         self.statusBar().showMessage("Modifiche salvate correttamente.", 5000)
-        self.refresh_data(show_cursor=False)
+        self._refresh_pending = False
+        self.refresh_data(show_cursor=False, apply_scope=True)
         self.reports_page.refresh()
         if not self.timer.isActive():
             self.timer.start()
@@ -683,7 +697,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._save_busy = False
         self.btn_edit_row.setEnabled(True)
         QtWidgets.QMessageBox.warning(self, "Salvataggio non riuscito", msg)
-        self.refresh_data(show_cursor=False)
+        self.refresh_data(show_cursor=False, apply_scope=True)
         if not self.timer.isActive():
             self.timer.start()
 
