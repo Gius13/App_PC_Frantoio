@@ -47,9 +47,9 @@ jobs:
       - name: Genera programma Windows portabile
         shell: pwsh
         run: |
-          python -m PyInstaller --noconfirm --clean --onefile --windowed --name App_Frantoio --paths . --icon app_frantoio/resources/app.ico --add-data "app_frantoio/resources/app.ico;app_frantoio/resources" app_frantoio/app.py
+          python -m PyInstaller --noconfirm --clean --onedir --windowed --name App_Frantoio --paths . --icon app_frantoio/resources/app.ico --add-data "app_frantoio/resources;app_frantoio/resources" app_frantoio/app.py
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          if (-not (Test-Path "dist/App_Frantoio.exe")) { throw "App_Frantoio.exe mancante" }
+          if (-not (Test-Path "dist/App_Frantoio/App_Frantoio.exe")) { throw "App_Frantoio.exe mancante nella distribuzione onedir" }
 
       - name: Installa Inno Setup 6
         shell: pwsh
@@ -83,6 +83,21 @@ jobs:
           }
           $setup = Get-Item "dist/installer/Setup_App_Frantoio.exe"
           Write-Host "Installer pronto: $($setup.Length) byte"
+
+      - name: Verifica installazione silenziosa
+        shell: pwsh
+        run: |
+          $setup = (Resolve-Path "dist/installer/Setup_App_Frantoio.exe").Path
+          $target = Join-Path $env:RUNNER_TEMP "AppFrantoioInstallTest"
+          $args = @("/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/DIR=$target")
+          $process = Start-Process -FilePath $setup -ArgumentList $args -Wait -PassThru
+          if ($process.ExitCode -ne 0) { throw "Installer exit code: $($process.ExitCode)" }
+          if (-not (Test-Path (Join-Path $target "App_Frantoio.exe"))) {
+            throw "Il programma non e' presente dopo l'installazione"
+          }
+          if (-not (Test-Path (Join-Path $target "_internal"))) {
+            throw "Le librerie della build veloce non sono presenti"
+          }
 
       - name: Firma di integrita SHA256
         shell: pwsh
