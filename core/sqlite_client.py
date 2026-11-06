@@ -54,7 +54,7 @@ class SQLiteClient:
     def __init__(self, db_path: str):
         self.db_path = db_path
         # Garantiamo schema e indici
-        _ensure_archive_db(self.db_path)
+        _ensure_archive_db(self.db_path).close()
 
     # ---------------- Lettura giorno (UI lista) ----------------
     def fetch_day(self, d: date) -> List[Dict[str, Any]]:
