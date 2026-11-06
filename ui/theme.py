@@ -6,7 +6,8 @@ secondarie ereditano immediatamente lo stesso aspetto.
 from __future__ import annotations
 
 from string import Template
-from PyQt6 import QtGui, QtWidgets
+from PyQt6 import QtGui, QtWidgets, QtSvg  # abilita caricamento icone SVG anche nel pacchetto Windows
+from app_frantoio.resources import resource_path
 
 THEME_LIGHT = "light"
 THEME_DARK = "dark"
@@ -363,14 +364,18 @@ QComboBox:hover, QDateEdit:hover, QDateTimeEdit:hover,
 QLineEdit:hover, QDoubleSpinBox:hover {
     border-color: $accent;
 }
-QComboBox::drop-down {
+QComboBox::drop-down, QDateEdit::drop-down, QDateTimeEdit::drop-down {
     border: none;
     width: 30px;
     background: transparent;
     border-top-right-radius: 14px;
     border-bottom-right-radius: 14px;
 }
-QComboBox::down-arrow { width: 9px; height: 9px; }
+QComboBox::down-arrow, QDateEdit::down-arrow, QDateTimeEdit::down-arrow {
+    image: url("$arrow");
+    width: 14px;
+    height: 10px;
+}
 QComboBox QAbstractItemView, QListView#softComboPopup {
     background: $panel;
     color: $text;
@@ -484,7 +489,9 @@ QCalendarWidget QTableView::item {
 """)
 
 def theme_stylesheet(theme: str) -> str:
-    return _THEME_QSS.substitute(_COLORS[normalize_theme(theme)])
+    colors = _COLORS[normalize_theme(theme)].copy()
+    colors["arrow"] = resource_path("dropdown_arrow.svg").replace("\\", "/")
+    return _THEME_QSS.substitute(colors)
 
 
 def calendar_stylesheet(theme: str | None = None) -> str:
