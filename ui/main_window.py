@@ -232,7 +232,13 @@ class MainWindow(QtWidgets.QMainWindow):
         self.table.verticalHeader().setVisible(False)
         self.table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectionBehavior.SelectRows)
         self.table.setSelectionMode(QtWidgets.QAbstractItemView.SelectionMode.SingleSelection)
-        self.table.horizontalHeader().setStretchLastSection(True)
+        header = self.table.horizontalHeader()
+        # Il nome si adatta automaticamente al contenuto, anche dopo l'arrivo
+        # di nuovi record; le altre colonne conservano larghezze indipendenti.
+        header.setSectionResizeMode(
+            0, QtWidgets.QHeaderView.ResizeMode.ResizeToContents
+        )
+        header.setStretchLastSection(True)
         vbox.addWidget(self.table)
 
         # Doppio clic apre sempre la finestra completa di modifica.
