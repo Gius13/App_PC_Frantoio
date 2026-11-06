@@ -175,3 +175,23 @@ Verificare in particolare: navigazione del calendario col mouse e da tastiera,
 scelta di un intervallo che attraversa il cambio di mese, filtri combinati,
 export e ritorno alla modalità giornaliera. Le fonti dati operative non sono
 modificate dalla sola ricerca; testare i salvataggi con dati di prova.
+
+
+## Selettore data sempre visibile
+
+Il calendario **Giorno** è nella barra della lista moliture, accanto ai
+pulsanti **Ricerca e filtri**, **Aggiorna** ed **Esporta Excel**.
+
+- Il pannello dei filtri avanzati rimane chiuso per impostazione predefinita.
+- Il calendario del giorno è visibile e utilizzabile anche a filtri chiusi.
+- La selezione del giorno cambia immediatamente la giornata mostrata.
+- Se è attiva una ricerca per **Più giorni**, selezionare una nuova data
+  dal calendario superiore riporta alla vista **Un giorno**.
+- I campi per selezionare **Dal / Al**, pagamento e intervallo di peso
+  restano nel pannello espandibile.
+- Il calendario non viene disabilitato durante i caricamenti manuali;
+  un cambio data durante il fetch viene elaborato al suo termine.
+
+**Test manuale:** tenere i filtri chiusi, cambiare data dalla barra superiore,
+verificare i record; riaprire i filtri, impostare Più giorni, richiudere e
+scegliere una nuova data dalla barra.
