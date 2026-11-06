@@ -16,10 +16,62 @@ class MolitureModel(QtCore.QAbstractTableModel):
             self._euro = 0.0
 
     # ---- API per aggiornare i dati ----
-    def set_rows(self, rows: List[Dict[str, Any]]):
-        self.beginResetModel()
-        self._rows = rows or []
-        self.endResetModel()
+    def set_rows(self, rows: List[Dict[str, Any]]) -> bool:
+        """Aggiorna soltanto i record cambiati, mantenendo indici e selezione.
+
+        Il reset completo ad ogni polling faceva perdere selezione, focus e scroll.
+        I record con ID esistente restano nella stessa posizione nel modello;
+        l'ordinamento visivo è gestito dal proxy Qt.
+        """
+        incoming = list(rows or [])
+        if incoming == self._rows:
+            return False
+
+        # La sincronizzazione richiede ID univoci. In caso di record anomali
+        # evita una riconciliazione ambigua e ricostruisce il modello.
+        ids = [r.get("id") for r in incoming]
+        if any(not rid for rid in ids) or len(set(ids)) != len(ids):
+            self.beginResetModel()
+            self._rows = incoming
+            self.endResetModel()
+            return True
+
+        wanted = {r["id"]: r for r in incoming}
+
+        # Rimuovi solo i record non più presenti. I QModelIndex degli altri
+        # record rimangono validi anche attraverso il QSortFilterProxyModel.
+        for position in range(len(self._rows) - 1, -1, -1):
+            if self._rows[position].get("id") not in wanted:
+                self.beginRemoveRows(QtCore.QModelIndex(), position, position)
+                del self._rows[position]
+                self.endRemoveRows()
+
+        # Aggiorna soltanto le celle realmente cambiate (nessun reset).
+        present = set()
+        for position, existing in enumerate(self._rows):
+            rid = existing.get("id")
+            current = wanted[rid]
+            present.add(rid)
+            if existing != current:
+                self._rows[position] = current
+                self.dataChanged.emit(
+                    self.index(position, 0),
+                    self.index(position, len(COLS) - 1),
+                    [
+                        QtCore.Qt.ItemDataRole.DisplayRole,
+                        QtCore.Qt.ItemDataRole.EditRole,
+                        QtCore.Qt.ItemDataRole.UserRole,
+                    ],
+                )
+
+        # Inserisci solo i nuovi record; il proxy li ordina per timestamp.
+        additions = [row for row in incoming if row["id"] not in present]
+        if additions:
+            start = len(self._rows)
+            self.beginInsertRows(QtCore.QModelIndex(), start, start + len(additions) - 1)
+            self._rows.extend(additions)
+            self.endInsertRows()
+        return True
 
     def row_at(self, row: int) -> Dict[str, Any]:
         return self._rows[row]
@@ -66,6 +118,20 @@ class MolitureModel(QtCore.QAbstractTableModel):
 
         ts = r.get("dataOra")
         pagamento = r.get("pagamento") or ""
+
+        # Il ruolo di ordinamento restituisce valori numerici reali:
+        # l'ora non deve essere ordinata come stringa HH:MM.
+        if role == QtCore.Qt.ItemDataRole.UserRole:
+            if c == 0: return str(name).casefold()
+            if c == 1: return weight_f
+            if c == 2: return prezzo
+            if c == 3: return abbuono_f
+            if c == 4:
+                try:
+                    return int(float(ts or 0))
+                except (TypeError, ValueError, OverflowError):
+                    return 0
+            if c == 5: return str(pagamento).casefold()
 
         # Per l'editor (EditRole) restituiamo valori "grezzi" non formattati
         if role == QtCore.Qt.ItemDataRole.EditRole:
