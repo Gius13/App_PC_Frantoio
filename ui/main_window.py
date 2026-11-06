@@ -204,8 +204,10 @@ class MainWindow(QtWidgets.QMainWindow):
         # --- TAB 1: Lista ---
         page_list = QtWidgets.QWidget()
         vbox = QtWidgets.QVBoxLayout(page_list)
+        vbox.setContentsMargins(22, 18, 22, 18)
+        vbox.setSpacing(16)
 
-        heading = QtWidgets.QLabel("Gestione moliture")
+        heading = QtWidgets.QLabel("Moliture")
         heading.setObjectName("pageTitle")
         vbox.addWidget(heading)
 
@@ -249,7 +251,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self.table.selectionModel().selectionChanged.connect(self._on_selection_changed)
 
         footer = QtWidgets.QHBoxLayout()
-        self.lbl_tot = QtWidgets.QLabel("Totale kg: 0.00   |   Abbuoni: € 0.00")
+        self.lbl_tot = QtWidgets.QLabel("0 moliture · 0,00 kg")
+        self.lbl_tot.setObjectName("resultsSummary")
         footer.addWidget(self.lbl_tot)
         footer.addStretch(1)
         footer.addWidget(QtWidgets.QLabel("Pagamento rapido:"))
@@ -257,8 +260,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self.cmb_pagamento_quick.addItems(["", "Contanti", "POS", "Assegno", "Olio"])
         self.btn_edit_row = QtWidgets.QPushButton("Modifica record")
         self.btn_edit_row.setObjectName("primaryButton")
-        self.btn_set_pagamento = QtWidgets.QPushButton("Imposta su riga selezionata")
-        self.btn_delete_row = QtWidgets.QPushButton("Cancella record selezionato")
+        self.btn_set_pagamento = QtWidgets.QPushButton("Applica pagamento")
+        self.btn_delete_row = QtWidgets.QPushButton("Elimina")
         self.btn_delete_row.setObjectName("dangerButton")
         footer.addWidget(self.btn_edit_row)
         footer.addWidget(self.cmb_pagamento_quick)
