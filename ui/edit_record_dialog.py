@@ -89,6 +89,7 @@ class EditRecordDialog(QtWidgets.QDialog):
             QtWidgets.QDialogButtonBox.StandardButton.Cancel
         )
         buttons.button(QtWidgets.QDialogButtonBox.StandardButton.Save).setText("Salva modifiche")
+        buttons.button(QtWidgets.QDialogButtonBox.StandardButton.Save).setObjectName("primaryButton")
         buttons.button(QtWidgets.QDialogButtonBox.StandardButton.Cancel).setText("Annulla")
         buttons.accepted.connect(self._validate_and_accept)
         buttons.rejected.connect(self.reject)
