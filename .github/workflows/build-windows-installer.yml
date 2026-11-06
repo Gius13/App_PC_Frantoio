@@ -1,0 +1,134 @@
+name: Crea installer App Frantoio per Windows
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - feature/modern-ui-record-editing
+    paths:
+      - "**/*.py"
+      - "AppFrantoio.iss"
+      - "resources/**"
+      - ".github/workflows/build-windows-installer.yml"
+
+jobs:
+  windows-installer:
+    runs-on: windows-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Scarica il repository
+        uses: actions/checkout@v4
+        with:
+          path: app_frantoio
+
+      - name: Configura Python 3.12 x64
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          architecture: x64
+
+      - name: Installa PyQt6 e gli strumenti di compilazione
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install PyQt6 requests pandas openpyxl tzdata pyinstaller
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Esegui test Windows
+        env:
+          QT_QPA_PLATFORM: offscreen
+        shell: pwsh
+        run: |
+          python -m unittest discover -s app_frantoio/tests -v
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Genera programma Windows portabile
+        shell: pwsh
+        run: |
+          python -m PyInstaller --noconfirm --clean --onefile --windowed --name App_Frantoio --paths . --icon app_frantoio/resources/app.ico --add-data "app_frantoio/resources/app.ico;app_frantoio/resources" app_frantoio/app.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if (-not (Test-Path "dist/App_Frantoio.exe")) { throw "App_Frantoio.exe mancante" }
+
+      - name: Installa Inno Setup 6
+        shell: pwsh
+        run: |
+          $pfx86 = [Environment]::GetFolderPath('ProgramFilesX86')
+          $iscc = @(
+            "$pfx86\Inno Setup 6\ISCC.exe",
+            "$env:ProgramFiles\Inno Setup 6\ISCC.exe"
+          ) | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if (-not $iscc) {
+            choco install innosetup --yes --no-progress
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
+
+      - name: Compila Setup_App_Frantoio.exe
+        shell: pwsh
+        run: |
+          $pfx86 = [Environment]::GetFolderPath('ProgramFilesX86')
+          $iscc = @(
+            "$pfx86\Inno Setup 6\ISCC.exe",
+            "$env:ProgramFiles\Inno Setup 6\ISCC.exe"
+          ) | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if (-not $iscc) { throw "Compilatore Inno Setup non trovato" }
+          & $iscc "AppFrantoio.iss"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if (-not (Test-Path "dist/installer/Setup_App_Frantoio.exe")) {
+            throw "Installer Windows non trovato"
+          }
+          $setup = Get-Item "dist/installer/Setup_App_Frantoio.exe"
+          Write-Host "Installer pronto: $($setup.Length) byte"
+
+      - name: Firma di integrita SHA256
+        shell: pwsh
+        run: |
+          $hash = (Get-FileHash "dist/installer/Setup_App_Frantoio.exe" -Algorithm SHA256).Hash
+          "$hash  Setup_App_Frantoio.exe" | Set-Content -Encoding utf8 "dist/installer/SHA256.txt"
+          Write-Host "SHA256 $hash"
+
+      - name: Istruzioni utente
+        shell: pwsh
+        run: |
+          @'
+          APP FRANTOIO - INSTALLER WINDOWS x64
+          ====================================
+          1. Chiudi il programma vecchio.
+          2. Fai un backup del database SQLite, anche se il setup non lo tocca.
+          3. Fai un backup di %APPDATA%\App_Frantoio\config.json.
+          4. Esegui Setup_App_Frantoio.exe e segui la procedura.
+          5. A installazione ultimata, apri App Frantoio dal menu Start.
+
+          La procedura installa il programma per il solo utente corrente
+          e crea la voce di disinstallazione di Windows.
+          Puoi scegliere la stessa cartella del vecchio eseguibile portabile:
+          questo permette di riutilizzare il database nella stessa cartella.
+
+          ATTENZIONE AI DATI:
+          - Configurazione Firebase: %APPDATA%\App_Frantoio\config.json
+          - Se archive_db e' un percorso relativo, SQLite usa la cartella
+            di lavoro dell'app. I collegamenti creati dall'installer usano
+            la cartella di installazione.
+          - Se hai dati in una cartella precedente e ne scegli un'altra,
+            configura archive_db con il PERCORSO ASSOLUTO dell'archivio
+            o trasferisci il database tramite una copia di sicurezza
+            a programma chiuso. La migrazione NON e' automatica.
+          - Il setup NON sovrascrive file .db o config.json.
+          - Il setup NON contiene credenziali Firebase.
+          - Un eseguibile non firmato puo' mostrare avvisi SmartScreen.
+
+          Gli aggiornamenti futuri devono essere installati sullo stesso
+          percorso per preservare il database locale.
+          '@ | Set-Content -Encoding utf8 "dist/installer/ISTRUZIONI.txt"
+
+      - name: Carica installer Windows
+        uses: actions/upload-artifact@v4
+        with:
+          name: App-Frantoio-Installer-Windows-x64
+          path: |
+            dist/installer/Setup_App_Frantoio.exe
+            dist/installer/SHA256.txt
+            dist/installer/ISTRUZIONI.txt
+          if-no-files-found: error
+          retention-days: 30
