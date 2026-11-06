@@ -47,6 +47,10 @@ class MainWindowSmokeTest(unittest.TestCase):
             w.timer.stop()
             w.sync_timer.stop()
             self.assertEqual(w.proxy.sortColumn(), 4)
+            self.assertEqual(
+                w.table.horizontalHeader().sectionResizeMode(0),
+                QtWidgets.QHeaderView.ResizeMode.ResizeToContents,
+            )
             self.assertEqual(w.filters.mode_combo.currentData(), "day")
             self.assertIsNotNone(w.filters.date_edit.calendarWidget())
             self.assertIsNotNone(w.filters.date_from.calendarWidget())
