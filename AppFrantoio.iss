@@ -51,6 +51,12 @@ Filename: "{app}\{#AppExe}"; WorkingDir: "{app}"; Description: "Avvia App Franto
 [Code]
 function InitializeSetup(): Boolean;
 begin
+  // Non mostrare finestre bloccanti durante le installazioni silenziose CI.
+  if WizardSilent then
+  begin
+    Result := True;
+    exit;
+  end;
   Result := (MsgBox(
     'Prima di aggiornare, chiudi App Frantoio e conserva una copia del database SQLite e della configurazione.' + #13#10 + #13#10 +
     'Il programma non cancella questi file; se in precedenza usavi una versione portabile con il database nella vecchia cartella, scegli quella stessa cartella oppure configura il percorso assoluto del database.' + #13#10 + #13#10 +
