@@ -73,6 +73,39 @@ class MolitureModel(QtCore.QAbstractTableModel):
             self.endInsertRows()
         return True
 
+    def patch_record_locally(self, record_id: str, changes: Dict[str, Any]) -> bool:
+        """Aggiorna subito la cella dopo un'azione avviata dall'interfaccia.
+
+        Non invoca nessuna chiamata di rete. Il chiamante e responsabile
+        del salvataggio e del rollback se il server restituisce un errore.
+        """
+        columns = {"name": 0, "weight": 1, "abbuono": 3,
+                   "dataOra": 4, "pagamento": 5}
+        if not changes or any(field not in columns for field in changes):
+            raise ValueError("Campi di aggiornamento locale non validi.")
+        for i, old in enumerate(self._rows):
+            if old.get("id") != record_id:
+                continue
+            changed = {field: value for field, value in changes.items()
+                       if old.get(field) != value}
+            if not changed:
+                return True
+            new_row = old.copy()
+            new_row.update(changed)
+            self._rows[i] = new_row
+            # Prezzo dipende dal peso, va anch'esso ridisegnato.
+            affected = [columns[field] for field in changed]
+            if "weight" in changed:
+                affected.append(2)
+            self.dataChanged.emit(
+                self.index(i, min(affected)), self.index(i, max(affected)),
+                [QtCore.Qt.ItemDataRole.DisplayRole,
+                 QtCore.Qt.ItemDataRole.EditRole,
+                 QtCore.Qt.ItemDataRole.UserRole],
+            )
+            return True
+        return False
+
     def row_at(self, row: int) -> Dict[str, Any]:
         return self._rows[row]
 
